@@ -12,8 +12,7 @@
 ;; TODO add a menu
 
 (defn getTime []
-  (let [time (gdate/DateTime.)]
-    (.now js/performance)))
+  (js/performance.now))
 (defmacro with [f-begin f-end & body]
   (f-begin)
   `(~@body)
@@ -30,22 +29,33 @@
   [(+ x1 x2) (+ y1 y2)])
 (defn create-puyo [x y color]
   [x y color])
+(declare player_grounded? player_move-left player_move-right player_move-down)
 (defn create-player
   "x and y are position on grid
   rotation starts off as up
   returns a map {:blocks [puyo puyo] :rot :UP :pos [x y]}
   "
   [x y color1 color2]
-  {:blocks [(create-puyo 0 -1 color1) (create-puyo 0 0 color2)] :pos [x (+ 1 y )]})
+  {:blocks [(create-puyo 0 -1 color1) (create-puyo 0 0 color2)] :pos [x (+ 1 y)]})
 (defn vec_rotate [[x y]]
   [(* -1 y) x])
 (defn puyo_rotate [[x y color] rots]
   (if (> rots 0)
     (recur (apply create-puyo (concat (vec_rotate [x y]) (list color))) (dec rots))
     [x y color]))
-(defn player_rotate [p ccw-rotations]
+(defn player_rotate [p board ccw-rotations]
   (when p
-    (assoc p :blocks (map #(puyo_rotate %  ccw-rotations) (:blocks p)))))
+    (let [new-player (assoc p :blocks (map #(puyo_rotate %  ccw-rotations) (:blocks p)))]
+      (if (player_grounded? new-player board)
+        (let [left-p (player_move-left new-player)
+              right-p (player_move-right new-player)
+              up-p (player_move-down new-player -0.8)]
+          (cond
+            (not (player_grounded? up-p board) ) up-p
+            (not (player_grounded? left-p board)) left-p
+            (not (player_grounded? right-p board) ) right-p
+            :else p))
+        new-player))))
 ;; (println (player_rotate (create-player 0 0 :pt/blue :pt/blue) 1))
 
 (defn create-falling-block [x y color]
@@ -72,6 +82,11 @@
   (when p (update p :pos update 0 s- 1 0)))
 (defn player_move-right [p]
   (when p (update p :pos update 0 s+ 1 5)))
+(defn player_move-checked [p fn board]
+  (let [new-player (fn p)]
+    (if ( player_grounded? new-player board)
+      p
+      new-player)))
 
 (defn player_grounded? [player board]
   (when player
@@ -157,18 +172,21 @@
       (reduce #(dfs board %2 color %1) (conj visited [x y]) neighbors))
     visited))
 
-(defn board_pop-puyos [board]
+(defn board_pop-puyos "returns [board [num-puyos-popped colors]], colors is hashset" [board]
   (let [rows (count board)
         cols (count (get board 0))
         blocks-to-remove
         (for [y (range rows) x (range cols)]
           (when (not (= :pt/empty (board-get-type board [x y])))
-            [x y (count (dfs board [x y] (board-get-type board [x y]) #{}))]))
+            [x y (board-get-type board [x y]) (count (dfs board [x y] (board-get-type board [x y]) #{}))]))
 
         blocks-to-remove (filter #(not (= nil %)) blocks-to-remove)
         blocks-to-remove (filter #(>= (last %) 4) blocks-to-remove)
-        blocks-to-remove (map (fn [[x y _]] [x y]) blocks-to-remove)]
-    (reduce (fn [board [x y]] (assoc-in board [y x] [:pt/empty])) board blocks-to-remove)))
+        blocks-to-remove (map (fn [[x y c _]] [x y c]) blocks-to-remove)]
+    (reduce
+     (fn [[ board puyos-popped# colors] [x y c]] [(assoc-in board [y x] [:pt/empty]) (inc puyos-popped#) (conj colors c)])
+     [board 0 #{}]
+     blocks-to-remove)))
 (defn board_get-falling-puyos "returns [board [p1 p2 p3 ..]]" [board]
   (let [rows (count board)
         cols (count (get board 0))
@@ -188,8 +206,10 @@
 (defonce state (atom
                 {:board (create-board 12 6 [:pt/empty])
                  :player (create-player 2 0 :pt/red :pt/red)
+                 :chain 0
                  :das 131 ;; ms
                  :textures {}
+                 :fonts {}
                  :keys {}
                  :falling-blocks []}))
 ;; (def fb (js/createFramebuffer))
@@ -280,18 +300,18 @@
 
 ;; (pt/assertHandlesAllTypes puyo-draw-handle)
 
-(defn player_input-handle [p keys das]
+(defn player_input-handle [p keys das board]
   (let [dt (fn [time] (- (getTime) time))
         justPressed (fn [time] (< (dt time) (+ 0 js/deltaTime)))
         checkTime (fn [time] (or (justPressed time) (> (dt time) das)))]
     (reduce (fn [p [key time]]
               ;; (println key)
               (cond
-                (and (checkTime time) (= key "ArrowLeft") (js/keyIsDown 37)) (player_move-left p)
-                (and (checkTime time) (= key "ArrowRight") (js/keyIsDown 39)) (player_move-right p)
+                (and (checkTime time) (= key "ArrowLeft") (js/keyIsDown 37)) (player_move-checked p player_move-left board)
+                (and (checkTime time) (= key "ArrowRight") (js/keyIsDown 39)) (player_move-checked p player_move-right board)
                 (and (checkTime time) (= key " ") (js/keyIsDown 32)) (player_move-down p 10)
-                (and (justPressed time) (= key "f")) (player_rotate p 1)
-                (and (justPressed time) (= key "d")) (player_rotate p 3)
+                (and (justPressed time) (= key "f")) (player_rotate p board 1)
+                (and (justPressed time) (= key "d")) (player_rotate p board 3)
                 (and (js/keyIsDown 40) (= key "ArrowDown")) (player_move-down p (/ 1 5))
                 (js/keyIsDown 13) (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum)))
                 (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
@@ -305,18 +325,21 @@
     ;;   :else p)))
 
 (defn preload []
-  (swap! state update :textures assoc :puyos (js/loadImage "original-puyos.png")))
+  (swap! state update :textures assoc :puyos (js/loadImage "original-puyos.png"))
+  (swap! state update :fonts assoc :roboto (js/loadFont "fonts/Roboto-Regular.ttf")))
 
 (defn setup []
   (let [canvas (js/createCanvas js/window.innerWidth js/window.innerHeight "webgl")
+        canvas (js/_renderer)
         texture (.getTexture canvas (:puyos (:textures @state)))]
     (.setInterpolation texture js/NEAREST js/NEAREST))
   (js/noSmooth)
+  (js/textFont (:roboto (:fonts @state)))
   (js/pixelDensity 1)
   (js/noStroke))
 
 (defn draw []
-  (swap! state update :player player_input-handle (:keys @state) (:das @state))
+  (swap! state update :player player_input-handle (:keys @state) (:das @state) (:board @state))
   ;; (println @state)
   ;; (println (:falling-blocks @state))
   ;; (println (:keys @state))
@@ -329,7 +352,12 @@
             (println "you died"))))
     (swap! state update :player player_move-down (* 0.0005 js/deltaTime)))
   (when (not (:player @state))
-    (swap! state update :board board_pop-puyos)
+    (let [[new-board puyos-popped# _] (board_pop-puyos (:board @state))]
+      (swap! state assoc :board new-board)
+      (when (> puyos-popped# 0)
+        (swap! state update :chain inc)
+        )
+      )
     (let [[board blocks] (board_get-falling-puyos (:board @state))]
       (when (seq blocks)
         (swap! state assoc :board board)
@@ -341,7 +369,9 @@
         (let [[board blocks] (board_place-grounded-falling-blocks (:board @state) (:falling-blocks @state))]
           (swap! state assoc :board board)
           (swap! state assoc :falling-blocks blocks)))
-    (when (not (:player @state)) (swap! state assoc :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))) ) ))
+    (when (not (:player @state))
+      (swap! state assoc :chain 0)
+      (swap! state assoc :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))))
 
   (js/background "gray")
   (js/fill "yellow")
@@ -357,6 +387,8 @@
     (draw-player (:player @state)
                  puyo-draw-handle
                  offx offy)
+(js/color "yellow")
+    (js/text  (str "chain " (:chain @state) ) -300 0)
     (draw-falling-blocks (:falling-blocks @state)
                          puyo-draw-handle
                          offx offy)))
