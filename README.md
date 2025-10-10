@@ -1,12 +1,3 @@
-# P5.cljs
+# ppte
 
-## Usage
-
-To use this template, clone this repo and run the following commands. This
-installs the required dependencies (including P5) and starts a server on
-`localhost:3000`. Happy sketching!
-
-```
-npm install
-npx shadow-cljs watch sketch
-```
+you may notice that there was another thing i made called ppte, this is the rewrite. rust wasm is not that great for web games
