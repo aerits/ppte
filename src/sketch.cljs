@@ -206,6 +206,7 @@
 (defonce state (atom
                 {:board (create-board 12 6 [:pt/empty])
                  :player (create-player 2 0 :pt/red :pt/red)
+                 :state-enum {:process :s/player-fall }
                  :chain 0
                  :das 131 ;; ms
                  :textures {}
@@ -310,19 +311,68 @@
                 (and (checkTime time) (= key "ArrowLeft") (js/keyIsDown 37)) (player_move-checked p player_move-left board)
                 (and (checkTime time) (= key "ArrowRight") (js/keyIsDown 39)) (player_move-checked p player_move-right board)
                 (and (checkTime time) (= key " ") (js/keyIsDown 32)) (player_move-down p 10)
-                (and (justPressed time) (= key "f")) (player_rotate p board 1)
-                (and (justPressed time) (= key "d")) (player_rotate p board 3)
+                (and (justPressed time) (= key "x")) (player_rotate p board 1)
+                (and (justPressed time) (= key "z")) (player_rotate p board 3)
                 (and (js/keyIsDown 40) (= key "ArrowDown")) (player_move-down p (/ 1 5))
                 (js/keyIsDown 13) (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum)))
                 (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
                 :else p)) p keys)))
-    ;; (cond
-    ;;   (and (checkTime (get keys "ArrowLeft")) (js/keyIsDown 37)) (player_move-left p)
-    ;;   (and (checkTime (get keys "ArrowRight")) (js/keyIsDown 39)) (player_move-right p)
-    ;;   (js/keyIsDown 40) (player_move-down p 0.5)
-    ;;   (js/keyIsDown 32) (println "you pressed space")
-    ;;   (js/keyIsDown 13) (create-player 2 0 (rand-nth (rest pt/enum )) (rand-nth (rest pt/enum )))
-    ;;   :else p)))
+
+(def state-enum [:s/player-fall :s/pop :s/dead])
+
+(defn state-is [state enum]
+  (= (:process state) enum))
+(defn state-fall-blocks [globalstate state currentTime deltaTime minSpeed]
+  (let [[board fallingblocks] (board_get-falling-puyos (:board globalstate))
+        fallingblocks (apply conj (:falling-blocks globalstate) fallingblocks)
+        fallingblocks (map (fn [block] (do (println block) (if (< (:yspeed block) minSpeed)
+                                           (assoc block :yspeed minSpeed)
+                                           block) )) fallingblocks)
+        fallingblocks (falling-blocks_move-down fallingblocks 0.01)
+
+        [board fallingblocks] (board_place-grounded-falling-blocks board fallingblocks)
+        new-globalstate (-> globalstate (assoc :board board) (assoc :falling-blocks fallingblocks))]
+    [new-globalstate (if (> (count fallingblocks) 0)
+                        state
+                        {:process :s/fall-fast :next-state [:s/pop currentTime 0]})])
+  )
+(defn state-update "state is {}, returns [globalstate state]" [globalstate state currentTime deltaTime]
+  (if (contains? state :next-state)
+    ;; change to next state
+    (let [next-state (:next-state state)
+          [next-state previousTime delta] next-state]
+      (if (> (- currentTime previousTime) delta)
+        [globalstate {:process next-state}]
+        [globalstate state]))
+
+    (cond
+      (state-is state :s/new-player)
+      [(assoc globalstate :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))
+        {:process :s/new-player :next-state [:s/player-fall currentTime 0]}]
+
+      (state-is state :s/player-fall)
+      (if (player_grounded? (:player globalstate) (:board globalstate))
+        (let [new-board (board_place-player (:board globalstate) (:player globalstate))]
+          (if new-board
+            [(-> (assoc globalstate :board new-board) (assoc :player nil))
+            {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
+            [(assoc globalstate :player nil) {:process :s/player-fall :next-state [:s/dead currentTime 0]}]))
+        [(update globalstate :player player_move-down (* 0.0005 deltaTime)) state])
+
+      (state-is state :s/fall-slow)
+      (state-fall-blocks globalstate state currentTime deltaTime 0)
+
+      (state-is state :s/fall-fast)
+      (state-fall-blocks globalstate state currentTime deltaTime 0.3)
+
+      (state-is state :s/pop)
+      (let [[new-board puyos-popped# _] (board_pop-puyos (:board globalstate))
+            popped? (> puyos-popped# 0)]
+        [(assoc globalstate :board new-board)
+         {:process :s/pop :next-state (if popped? [ :s/fall-fast currentTime 300 ] [ :s/new-player currentTime 0])}]
+        )
+        ))
+  )
 
 (defn preload []
   (swap! state update :textures assoc :puyos (js/loadImage "original-puyos.png"))
@@ -343,36 +393,9 @@
   ;; (println @state)
   ;; (println (:falling-blocks @state))
   ;; (println (:keys @state))
-  (if (player_grounded? (:player @state) (:board @state))
-    (let [new-board (board_place-player (:board @state) (:player @state))]
-      (if new-board
-        (do (swap! state assoc :board new-board)
-            (swap! state assoc :player nil))
-        (do (swap! state assoc :player nil)
-            (println "you died"))))
-    (swap! state update :player player_move-down (* 0.0005 js/deltaTime)))
-  (when (not (:player @state))
-    (let [[new-board puyos-popped# _] (board_pop-puyos (:board @state))]
-      (swap! state assoc :board new-board)
-      (when (> puyos-popped# 0)
-        (swap! state update :chain inc)
-        )
-      )
-    (let [[board blocks] (board_get-falling-puyos (:board @state))]
-      (when (seq blocks)
-        (swap! state assoc :board board)
-        (println blocks)
-        (swap! state assoc :falling-blocks (apply conj (:falling-blocks @state) blocks)))))
-
-  (if (> (count (:falling-blocks @state)) 0)
-    (do (swap! state update :falling-blocks falling-blocks_move-down 0.01)
-        (let [[board blocks] (board_place-grounded-falling-blocks (:board @state) (:falling-blocks @state))]
-          (swap! state assoc :board board)
-          (swap! state assoc :falling-blocks blocks)))
-    (when (not (:player @state))
-      (swap! state assoc :chain 0)
-      (swap! state assoc :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))))
-
+  (let [[new-state new-state-enum] (state-update @state (:state-enum @state) ( getTime ) js/deltaTime)]
+    (reset! state new-state)
+    (swap! state assoc :state-enum new-state-enum))
   (js/background "gray")
   (js/fill "yellow")
   ;; (let [offx js/window.innerWidth
