@@ -51,9 +51,9 @@
               right-p (player_move-right new-player)
               up-p (player_move-down new-player -0.8)]
           (cond
-            (not (player_grounded? up-p board) ) up-p
+            (not (player_grounded? up-p board)) up-p
             (not (player_grounded? left-p board)) left-p
-            (not (player_grounded? right-p board) ) right-p
+            (not (player_grounded? right-p board)) right-p
             :else p))
         new-player))))
 ;; (println (player_rotate (create-player 0 0 :pt/blue :pt/blue) 1))
@@ -84,7 +84,7 @@
   (when p (update p :pos update 0 s+ 1 5)))
 (defn player_move-checked [p fn board]
   (let [new-player (fn p)]
-    (if ( player_grounded? new-player board)
+    (if (player_grounded? new-player board)
       p
       new-player)))
 
@@ -184,7 +184,7 @@
         blocks-to-remove (filter #(>= (last %) 4) blocks-to-remove)
         blocks-to-remove (map (fn [[x y c _]] [x y c]) blocks-to-remove)]
     (reduce
-     (fn [[ board puyos-popped# colors] [x y c]] [(assoc-in board [y x] [:pt/empty]) (inc puyos-popped#) (conj colors c)])
+     (fn [[board puyos-popped# colors] [x y c]] [(assoc-in board [y x] [:pt/empty]) (inc puyos-popped#) (conj colors c)])
      [board 0 #{}]
      blocks-to-remove)))
 (defn board_get-falling-puyos "returns [board [p1 p2 p3 ..]]" [board]
@@ -330,10 +330,10 @@
 
 (defn setup []
   (let [canvas (js/createCanvas js/window.innerWidth js/window.innerHeight "webgl")
-        canvas (js/_renderer)
+        ;; canvas (js/_renderer)
         texture (.getTexture canvas (:puyos (:textures @state)))]
     (.setInterpolation texture js/NEAREST js/NEAREST))
-  (js/noSmooth)
+  ;; (js/noSmooth)
   (js/textFont (:roboto (:fonts @state)))
   (js/pixelDensity 1)
   (js/noStroke))
@@ -387,8 +387,8 @@
     (draw-player (:player @state)
                  puyo-draw-handle
                  offx offy)
-(js/color "yellow")
-    (js/text  (str "chain " (:chain @state) ) -300 0)
+    (js/color "yellow")
+    (js/text  (str "chain " (:chain @state) "fps: " (Math/round (js/frameRate) )) -300 0)
     (draw-falling-blocks (:falling-blocks @state)
                          puyo-draw-handle
                          offx offy)))
