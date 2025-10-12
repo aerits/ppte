@@ -206,7 +206,7 @@
 (defonce state (atom
                 {:board (create-board 12 6 [:pt/empty])
                  :player (create-player 2 0 :pt/red :pt/red)
-                 :state-enum {:process :s/player-fall }
+                 :state-enum {:process :s/player-fall}
                  :chain 0
                  :das 131 ;; ms
                  :textures {}
@@ -326,16 +326,15 @@
   (let [[board fallingblocks] (board_get-falling-puyos (:board globalstate))
         fallingblocks (apply conj (:falling-blocks globalstate) fallingblocks)
         fallingblocks (map (fn [block] (do (println block) (if (< (:yspeed block) minSpeed)
-                                           (assoc block :yspeed minSpeed)
-                                           block) )) fallingblocks)
+                                                             (assoc block :yspeed minSpeed)
+                                                             block))) fallingblocks)
         fallingblocks (falling-blocks_move-down fallingblocks 0.01)
 
         [board fallingblocks] (board_place-grounded-falling-blocks board fallingblocks)
         new-globalstate (-> globalstate (assoc :board board) (assoc :falling-blocks fallingblocks))]
     [new-globalstate (if (> (count fallingblocks) 0)
-                        state
-                        {:process :s/fall-fast :next-state [:s/pop currentTime 0]})])
-  )
+                       state
+                       {:process :s/fall-fast :next-state [:s/pop currentTime 0]})]))
 (defn state-update "state is {}, returns [globalstate state]" [globalstate state currentTime deltaTime]
   (if (contains? state :next-state)
     ;; change to next state
@@ -348,14 +347,14 @@
     (cond
       (state-is state :s/new-player)
       [(assoc globalstate :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))
-        {:process :s/new-player :next-state [:s/player-fall currentTime 0]}]
+       {:process :s/new-player :next-state [:s/player-fall currentTime 0]}]
 
       (state-is state :s/player-fall)
       (if (player_grounded? (:player globalstate) (:board globalstate))
         (let [new-board (board_place-player (:board globalstate) (:player globalstate))]
           (if new-board
             [(-> (assoc globalstate :board new-board) (assoc :player nil))
-            {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
+             {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
             [(assoc globalstate :player nil) {:process :s/player-fall :next-state [:s/dead currentTime 0]}]))
         [(update globalstate :player player_move-down (* 0.0005 deltaTime)) state])
 
@@ -369,10 +368,7 @@
       (let [[new-board puyos-popped# _] (board_pop-puyos (:board globalstate))
             popped? (> puyos-popped# 0)]
         [(assoc globalstate :board new-board)
-         {:process :s/pop :next-state (if popped? [ :s/fall-fast currentTime 300 ] [ :s/new-player currentTime 0])}]
-        )
-        ))
-  )
+         {:process :s/pop :next-state (if popped? [:s/fall-fast currentTime 300] [:s/new-player currentTime 0])}]))))
 
 (defn preload []
   (swap! state update :textures assoc :puyos (js/loadImage "original-puyos.png"))
@@ -393,7 +389,7 @@
   ;; (println @state)
   ;; (println (:falling-blocks @state))
   ;; (println (:keys @state))
-  (let [[new-state new-state-enum] (state-update @state (:state-enum @state) ( getTime ) js/deltaTime)]
+  (let [[new-state new-state-enum] (state-update @state (:state-enum @state) (getTime) js/deltaTime)]
     (reset! state new-state)
     (swap! state assoc :state-enum new-state-enum))
   (js/background "gray")
@@ -411,7 +407,7 @@
                  puyo-draw-handle
                  offx offy)
     (js/color "yellow")
-    (js/text  (str "chain " (:chain @state) "fps: " (Math/round (js/frameRate) )) -300 0)
+    (js/text  (str "chain " (:chain @state) "fps: " (Math/round (js/frameRate))) -300 0)
     (draw-falling-blocks (:falling-blocks @state)
                          puyo-draw-handle
                          offx offy)))
