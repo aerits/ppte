@@ -1,7 +1,7 @@
 (ns sketch
   (:require [goog.object :as g]
-            [goog.date :as gdate]
-            [PuyoTypes :as pt])
+            [PuyoTypes :as pt]
+            [Particle :as pcl])
   #_{:clj-kondo/ignore [:unused-import]}
   (:import p5))
 
@@ -206,6 +206,7 @@
 (defonce state (atom
                 {:board (create-board 12 6 [:pt/empty])
                  :player (create-player 2 0 :pt/red :pt/red)
+                 :particles {}
                  :state-enum {:process :s/player-fall}
                  :chain 0
                  :das 131 ;; ms
@@ -266,6 +267,12 @@
    (->> (:textures @state) (:puyos))
    [18 17 1] [sx sy] [(+ ofx x) (+ ofy y) w h]))
 
+(defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos]
+  (pcl/create-particle
+   (fn [pc])
+   (fn [pc])
+   {:frame 0 :max-frames (count grid-pos)})
+  )
 (defn =i [& terms]
   (if (apply = terms) 1 0))
 (defn puyo-drawer-generator [sx sy color]
