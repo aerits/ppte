@@ -78,6 +78,10 @@
   (if (<= x min)
     0
     (- x y)))
+(defn l+ [x y max]
+  (if (>= x max)
+    0
+    (+ x y)))
 (defn player_move-left [p]
   (when p (update p :pos update 0 s- 1 0)))
 (defn player_move-right [p]
@@ -267,11 +271,11 @@
    (->> (:textures @state) (:puyos))
    [18 17 1] [sx sy] [(+ ofx x) (+ ofy y) w h]))
 
-(defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos]
+(defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos loop?]
   (pcl/create-particle
    (fn [pc])
-   (fn [pc])
-   {:frame 0 :max-frames (count grid-pos)})
+   (fn [pc] (update pc :frame l+ 1 (:max-frames pc)))
+   {:frame 0 :max-frames (count grid-pos) :loop loop?})
   )
 (defn =i [& terms]
   (if (apply = terms) 1 0))
