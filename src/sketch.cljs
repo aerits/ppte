@@ -70,15 +70,15 @@
 (defn falling-blocks_move-down [blocks accel]
   (println blocks)
   (map #(falling-block_move-down % accel) blocks))
-(defn s+ [x y max]
+(defn s+ "addition with max, never go over max" [x y max]
   (if (>= x max)
     max
     (+ x y)))
-(defn s- [x y min]
+(defn s- "subtraction with min, don't go below min" [x y min]
   (if (<= x min)
-    0
+    min
     (- x y)))
-(defn l+ [x y max]
+(defn l+ "wraparound add" [x y max]
   (if (>= x max)
     0
     (+ x y)))
@@ -148,7 +148,7 @@
           (recur (rest b) (second b)
                  (assoc-in board [(second block) (first block)] [(last block)]))
           board)))))
-(defn board_place-grounded-falling-blocks "returns [board blocks]" [board blocks]
+(defn board_place-grounded-falling-blocks "returns [board fallingblocks placedblocks]" [board blocks]
   (let [blocks (for [block blocks]
                  (if (player_grounded? block board)
                    [true block]
@@ -157,7 +157,7 @@
                                                             blocks))
         new-blocks (map (fn [[_ block]] block) (filter #(= nil (first %)) blocks))
         new-board (reduce #(board_place-player %1 %2) board grounded-blocks)]
-    [new-board new-blocks]))
+    [new-board new-blocks grounded-blocks]))
 
 ;; (defn puyo-check-connected [board vec color already-counted]
 ;;   (if (or (= color (board-get-type board vec)) (contains? already-counted vec))
@@ -273,10 +273,10 @@
 
 (defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos loop?]
   (pcl/create-particle
-   (fn [pc])
-   (fn [pc] (update pc :frame l+ 1 (:max-frames pc)))
-   {:frame 0 :max-frames (count grid-pos) :loop loop?})
-  )
+   (fn [pc [x y] [ofx ofy] w h] (let [current-frame (nth (:frame pc) grid-pos)]
+                                  (draw-puyo current-frame [x y] [ofx ofy] w h)))
+   (fn [pc] (update pc :frame (if loop? l+ s+) 1 (:max-frames pc)))
+   {:frame 0 :max-frames (count grid-pos)}))
 (defn =i [& terms]
   (if (apply = terms) 1 0))
 (defn puyo-drawer-generator [sx sy color]
@@ -336,13 +336,15 @@
 (defn state-fall-blocks [globalstate state currentTime deltaTime minSpeed]
   (let [[board fallingblocks] (board_get-falling-puyos (:board globalstate))
         fallingblocks (apply conj (:falling-blocks globalstate) fallingblocks)
-        fallingblocks (map (fn [block] (do (println block) (if (< (:yspeed block) minSpeed)
-                                                             (assoc block :yspeed minSpeed)
-                                                             block))) fallingblocks)
+        fallingblocks (map (fn [block] (if (< (:yspeed block) minSpeed)
+                                         (assoc block :yspeed minSpeed)
+                                         block)) fallingblocks)
         fallingblocks (falling-blocks_move-down fallingblocks 0.01)
 
-        [board fallingblocks] (board_place-grounded-falling-blocks board fallingblocks)
-        new-globalstate (-> globalstate (assoc :board board) (assoc :falling-blocks fallingblocks))]
+        [board fallingblocks placedblocks] (board_place-grounded-falling-blocks board fallingblocks)
+        new-globalstate (-> globalstate
+                            (assoc :board board)
+                            (assoc :falling-blocks fallingblocks))]
     [new-globalstate (if (> (count fallingblocks) 0)
                        state
                        {:process :s/fall-fast :next-state [:s/pop currentTime 0]})]))
