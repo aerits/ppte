@@ -6,9 +6,8 @@
   (:import p5))
 
 ;; TODO switch to drawing on a texture
-;; TODO animations
+;; TODO refactor into multiple files
 ;; TODO add lock delay
-;; TODO add rotation
 ;; TODO add a menu
 
 (defn getTime []
