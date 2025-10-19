@@ -68,7 +68,7 @@
     (-> (update block :yspeed + accel)
         (player_move-down (:yspeed block)))))
 (defn falling-blocks_move-down [blocks accel]
-  (println blocks)
+  ;; (println blocks)
   (map #(falling-block_move-down % accel) blocks))
 (defn s+ "addition with max, never go over max" [x y max]
   (if (>= x max)
@@ -117,8 +117,8 @@
             (recur (rest b) (second b))
             nil))))))
 
-(defn board_place-player [board p]
-  (println p)
+(defn board_place-player "returns [board p] where p has the new position" [board p]
+  ;; (println p)
   (let [p (loop [p p]
             ;; if y = -1, ur dead
             (if (> -1 (get (:pos p) 1))
@@ -147,7 +147,7 @@
         (if (seq b)
           (recur (rest b) (second b)
                  (assoc-in board [(second block) (first block)] [(last block)]))
-          board)))))
+          [board (assoc p :pos [x y])])))))
 (defn board_place-grounded-falling-blocks "returns [board fallingblocks placedblocks]" [board blocks]
   (let [blocks (for [block blocks]
                  (if (player_grounded? block board)
@@ -156,17 +156,11 @@
         grounded-blocks (map (fn [[_ block]] block) (filter #(not (= nil (first %)))
                                                             blocks))
         new-blocks (map (fn [[_ block]] block) (filter #(= nil (first %)) blocks))
-        new-board (reduce #(board_place-player %1 %2) board grounded-blocks)]
-    [new-board new-blocks grounded-blocks]))
-
-;; (defn puyo-check-connected [board vec color already-counted]
-;;   (if (or (= color (board-get-type board vec)) (contains? already-counted vec))
-
-;;     (let [dirs [[0 -1] [0 1] [1 0] [-1 0]]]
-;;       (apply + 1 (for [dir dirs]
-;;                    (puyo-check-connected board (+v vec dir) color (conj already-counted vec)))))
-
-;;     0))
+        [new-board placed] (reduce (fn [[board placedb] block]
+                                     (let [[newboard placed] (board_place-player board block)]
+                                       [newboard (conj placedb placed)]))
+                                   [board []] grounded-blocks)]
+    [new-board new-blocks placed]))
 
 (defn dfs [board [x y] color visited]
   (if (and (= color (board-get-type board [x y])) (not (contains? visited [x y])))
@@ -176,7 +170,7 @@
       (reduce #(dfs board %2 color %1) (conj visited [x y]) neighbors))
     visited))
 
-(defn board_pop-puyos "returns [board [num-puyos-popped colors]], colors is hashset" [board]
+(defn board_pop-puyos "returns [board [num-puyos-popped colors] popped-blocks], colors is hashset" [board]
   (let [rows (count board)
         cols (count (get board 0))
         blocks-to-remove
@@ -186,9 +180,11 @@
 
         blocks-to-remove (filter #(not (= nil %)) blocks-to-remove)
         blocks-to-remove (filter #(>= (last %) 4) blocks-to-remove)
-        blocks-to-remove (map (fn [[x y c _]] [x y c]) blocks-to-remove)]
+        blocks-to-remove (map (fn [[x y c _]] [x y c]) blocks-to-remove)
+        popped-blocks (map (fn [[x y c]] (create-falling-block x y c)) blocks-to-remove)]
     (reduce
-     (fn [[board puyos-popped# colors] [x y c]] [(assoc-in board [y x] [:pt/empty]) (inc puyos-popped#) (conj colors c)])
+     (fn [[board puyos-popped# colors] [x y c]]
+       [(assoc-in board [y x] [:pt/empty]) (inc puyos-popped#) (conj colors c) popped-blocks])
      [board 0 #{}]
      blocks-to-remove)))
 (defn board_get-falling-puyos "returns [board [p1 p2 p3 ..]]" [board]
@@ -218,6 +214,7 @@
                  :fonts {}
                  :keys {}
                  :falling-blocks []}))
+(def timer (atom {:timer/lastUpdate (getTime) :timer/dt 50}))
 ;; (def fb (js/createFramebuffer))
 (defn draw-board
   "
@@ -228,17 +225,22 @@
   [v handle x y]
   (dotimes [row (count v)]
     (dotimes [col (count (get v 0))]
-      (let [el (board-get-type v [col row])
+      (when (not (contains? (:particles @state) [col row]))
+        (let [el (board-get-type v [col row])
             ;; right left up down
-            dirs '([1 0] [-1 0] [0 -1] [0 1])
-            surrounding (map (fn [dirvec] (board-get-type v (+v dirvec [col row]))) dirs)
-            f (get handle el)]
-        (if f
+              dirs '([1 0] [-1 0] [0 -1] [0 1])
+              surrounding (map (fn [dirvec]
+                                 (let [dir (+v dirvec [col row])]
+                                   (if (not (contains? (:particles @state) dir))
+                                     (board-get-type v dir)
+                                     (board-get-type v [200 200])))) dirs)
+              f (get handle el)]
+          (if f
           ;; (when (= el :pt/red)
           ;; (println surrounding)
           ;;   )
-          (f col row x y surrounding)
-          (throw (js/Error (str "Draw handle not implemented for " el))))))))
+            (f col row x y surrounding)
+            (println (str "Draw handle not implemented for " el))))))))
 
 (defn draw-player
   [p handle x y]
@@ -271,12 +273,20 @@
    (->> (:textures @state) (:puyos))
    [18 17 1] [sx sy] [(+ ofx x) (+ ofy y) w h]))
 
-(defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos loop?]
-  (pcl/create-particle
-   (fn [pc [x y] [ofx ofy] w h] (let [current-frame (nth (:frame pc) grid-pos)]
-                                  (draw-puyo current-frame [x y] [ofx ofy] w h)))
-   (fn [pc] (update pc :frame (if loop? l+ s+) 1 (:max-frames pc)))
-   {:frame 0 :max-frames (count grid-pos)}))
+(def pt-to-grid {:pt/red [0 3]
+                 :pt/green [0 7]
+                 :pt/blue [0 11]
+                 :pt/yellow [0 15]
+                 :pt/purple [0 19]})
+(defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos color loop? lifetime]
+  (let [[colorx colory] (color pt-to-grid)
+        grid-pos (map (fn [[x y]] [(+ colorx x) (+ colory y)]) grid-pos)]
+    (pcl/create-particle
+     (fn [pc [x y] [ofx ofy] w h] (let [current-frame (nth grid-pos (:frame pc))]
+                                    (draw-puyo current-frame [(* x w) (* y h)] [ofx ofy] w h)))
+     (fn [pc] (update pc :frame (if loop? l+ s+) 1 (:max-frames pc)))
+     {:frame 0 :max-frames (dec (count grid-pos)) :death (+ (getTime) lifetime)})))
+
 (defn =i [& terms]
   (if (apply = terms) 1 0))
 (defn puyo-drawer-generator [sx sy color]
@@ -329,6 +339,23 @@
                 (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
                 :else p)) p keys)))
 
+(def block-land-hook
+  [(fn [globalstate blocks]
+     (println blocks)
+     (update globalstate :particles
+             #(conj
+               %
+               (reduce
+                (fn [acc block]
+                  (reduce (fn [acc block2]
+                            (let [[x y c] block2
+                                  [x y] (+v [x y] (:pos block))]
+                              (assoc acc [x y] (create-puyo-animation-particle [[6 0] [7 0]] c true 100)))) acc (:blocks block)))
+                {} blocks))))])
+
+(defn run-hook [globalstate hook & args]
+  (reduce #(apply %2 %1 args) globalstate hook))
+
 (def state-enum [:s/player-fall :s/pop :s/dead])
 
 (defn state-is [state enum]
@@ -343,11 +370,12 @@
 
         [board fallingblocks placedblocks] (board_place-grounded-falling-blocks board fallingblocks)
         new-globalstate (-> globalstate
+                            (run-hook block-land-hook placedblocks)
                             (assoc :board board)
                             (assoc :falling-blocks fallingblocks))]
     [new-globalstate (if (> (count fallingblocks) 0)
                        state
-                       {:process :s/fall-fast :next-state [:s/pop currentTime 0]})]))
+                       (do (println placedblocks) {:process :s/fall-fast :next-state [:s/pop currentTime 100]}))]))
 (defn state-update "state is {}, returns [globalstate state]" [globalstate state currentTime deltaTime]
   (if (contains? state :next-state)
     ;; change to next state
@@ -364,9 +392,12 @@
 
       (state-is state :s/player-fall)
       (if (player_grounded? (:player globalstate) (:board globalstate))
-        (let [new-board (board_place-player (:board globalstate) (:player globalstate))]
+        (let [[new-board placed-pos] (board_place-player (:board globalstate) (:player globalstate))]
           (if new-board
-            [(-> (assoc globalstate :board new-board) (assoc :player nil))
+            [(-> globalstate
+                 (run-hook block-land-hook (list placed-pos))
+                 (assoc :board new-board)
+                 (assoc :player nil))
              {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
             [(assoc globalstate :player nil) {:process :s/player-fall :next-state [:s/dead currentTime 0]}]))
         [(update globalstate :player player_move-down (* 0.0005 deltaTime)) state])
@@ -378,9 +409,9 @@
       (state-fall-blocks globalstate state currentTime deltaTime 0.3)
 
       (state-is state :s/pop)
-      (let [[new-board puyos-popped# _] (board_pop-puyos (:board globalstate))
+      (let [[new-board puyos-popped# _colors popped] (board_pop-puyos (:board globalstate))
             popped? (> puyos-popped# 0)]
-        [(assoc globalstate :board new-board)
+        [(-> (assoc globalstate :board new-board) (run-hook block-land-hook popped))
          {:process :s/pop :next-state (if popped? [:s/fall-fast currentTime 300] [:s/new-player currentTime 0])}]))))
 
 (defn preload []
@@ -405,6 +436,19 @@
   (let [[new-state new-state-enum] (state-update @state (:state-enum @state) (getTime) js/deltaTime)]
     (reset! state new-state)
     (swap! state assoc :state-enum new-state-enum))
+
+  (when (> (- (getTime) (:timer/updateTime @timer)) (:timer/dt @timer))
+    (swap! timer assoc :timer/updateTime (getTime))
+    (let [particles (:particles @state)
+          new-particles (reduce
+                         (fn [acc [pos particle]]
+                           (if (> (:death particle) (getTime))
+                             (conj acc {pos ((:on-update particle) particle)})
+                             acc))
+                         {}
+                         particles)]
+      (swap! state assoc :particles new-particles)))
+
   (js/background "gray")
   (js/fill "yellow")
   ;; (let [offx js/window.innerWidth
@@ -416,6 +460,9 @@
     (draw-board (:board @state)
                 puyo-draw-handle
                 offx offy)
+    (doseq [[[x y] particle] (:particles @state)]
+      (println (str [x y] particle))
+      ((:on-draw particle) particle [x y] [offx offy] 50 50))
     (draw-player (:player @state)
                  puyo-draw-handle
                  offx offy)
