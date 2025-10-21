@@ -1,9 +1,11 @@
 (ns sketch
   (:require [goog.object :as g]
             [PuyoTypes :as pt]
-            [Particle :as pcl])
+            [Particle :as pcl]
+            )
   #_{:clj-kondo/ignore [:unused-import]}
-  (:import p5))
+  (:import p5)
+  (:require-macros [Macros :as m]))
 
 ;; TODO switch to drawing on a texture
 ;; TODO refactor into multiple files
@@ -338,9 +340,8 @@
                 (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
                 :else p)) p keys)))
 
-(def block-land-hook
-  [(fn [globalstate blocks]
-     (println blocks)
+(defn create-anim-hook [particle-f]
+  (fn [globalstate blocks]
      (update globalstate :particles
              #(conj
                %
@@ -349,8 +350,32 @@
                   (reduce (fn [acc block2]
                             (let [[x y c] block2
                                   [x y] (+v [x y] (:pos block))]
-                              (assoc acc [x y] (create-puyo-animation-particle [[6 0] [7 0]] c true 100)))) acc (:blocks block)))
-                {} blocks))))])
+                              (assoc acc [x y] (particle-f c)))) acc (:blocks block)))
+                {} blocks))))
+  )
+
+(defn frame-extend "returns v v v v for (frame-extend v 4)"[& vecs]
+  ;; (println vecs)
+  (->>
+   (for [[a b] (partition 2 1 (concat vecs '(1)))]
+     (do
+     (println [a b])
+    (if  (vector? a)
+      (if (number? b)
+        (repeat b a)
+        (list a))
+      (list nil)))
+       )
+    (reduce #(concat %1 %2))
+    (filter #(not (= % nil)))
+    (vec)))
+
+(def hook-block-land
+  [(create-anim-hook #(create-puyo-animation-particle [[6 0] [7 0]] % true 200))])
+(def hook-block-pop
+  [(create-anim-hook #(create-puyo-animation-particle
+                       (frame-extend [4 0] 6 [4 -1] [5 -1] [6 -1] [7 -1] [8 -1]) % false 700))])
+
 
 (defn run-hook [globalstate hook & args]
   (reduce #(apply %2 %1 args) globalstate hook))
@@ -369,7 +394,7 @@
 
         [board fallingblocks placedblocks] (board_place-grounded-falling-blocks board fallingblocks)
         new-globalstate (-> globalstate
-                            (run-hook block-land-hook placedblocks)
+                            (run-hook hook-block-land placedblocks)
                             (assoc :board board)
                             (assoc :falling-blocks fallingblocks))]
     [new-globalstate (if (> (count fallingblocks) 0)
@@ -394,7 +419,7 @@
         (let [[new-board placed-pos] (board_place-player (:board globalstate) (:player globalstate))]
           (if new-board
             [(-> globalstate
-                 (run-hook block-land-hook (list placed-pos))
+                 (run-hook hook-block-land (list placed-pos))
                  (assoc :board new-board)
                  (assoc :player nil))
              {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
@@ -410,8 +435,8 @@
       (state-is state :s/pop)
       (let [[new-board puyos-popped# _colors popped] (board_pop-puyos (:board globalstate))
             popped? (> puyos-popped# 0)]
-        [(-> (assoc globalstate :board new-board) (run-hook block-land-hook popped))
-         {:process :s/pop :next-state (if popped? [:s/fall-fast currentTime 300] [:s/new-player currentTime 0])}]))))
+        [(-> (assoc globalstate :board new-board) (run-hook hook-block-pop popped))
+         {:process :s/pop :next-state (if popped? [:s/fall-fast currentTime 700] [:s/new-player currentTime 0])}]))))
 
 (defn preload []
   (swap! state update :textures assoc :puyos (js/loadImage "original-puyos.png"))
