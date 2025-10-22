@@ -358,14 +358,11 @@
   ;; (println vecs)
   (->>
    (for [[a b] (partition 2 1 (concat vecs '(1)))]
-     (do
-     (println [a b])
     (if  (vector? a)
       (if (number? b)
         (repeat b a)
         (list a))
       (list nil)))
-       )
     (reduce #(concat %1 %2))
     (filter #(not (= % nil)))
     (vec)))
@@ -374,7 +371,7 @@
   [(create-anim-hook #(create-puyo-animation-particle [[6 0] [7 0]] % true 200))])
 (def hook-block-pop
   [(create-anim-hook #(create-puyo-animation-particle
-                       (frame-extend [4 0] 6 [4 -1] [5 -1] [6 -1] [7 -1] [8 -1]) % false 700))])
+                       (frame-extend [0 0] [9 0] [0 0] [9 0] [0 0] [9 0] [4 0 1] 4 [7 -1] [8 -1]) % false 700))])
 
 
 (defn run-hook [globalstate hook & args]
@@ -390,7 +387,7 @@
         fallingblocks (map (fn [block] (if (< (:yspeed block) minSpeed)
                                          (assoc block :yspeed minSpeed)
                                          block)) fallingblocks)
-        fallingblocks (falling-blocks_move-down fallingblocks 0.01)
+        fallingblocks (falling-blocks_move-down fallingblocks (* deltaTime 0.0007 ))
 
         [board fallingblocks placedblocks] (board_place-grounded-falling-blocks board fallingblocks)
         new-globalstate (-> globalstate
@@ -399,7 +396,7 @@
                             (assoc :falling-blocks fallingblocks))]
     [new-globalstate (if (> (count fallingblocks) 0)
                        state
-                       (do (println placedblocks) {:process :s/fall-fast :next-state [:s/pop currentTime 100]}))]))
+                       {:process :s/fall-fast :next-state [:s/pop currentTime 100]})]))
 (defn state-update "state is {}, returns [globalstate state]" [globalstate state currentTime deltaTime]
   (if (contains? state :next-state)
     ;; change to next state
@@ -485,7 +482,7 @@
                 puyo-draw-handle
                 offx offy)
     (doseq [[[x y] particle] (:particles @state)]
-      (println (str [x y] particle))
+      ;; (println (str [x y] particle))
       ((:on-draw particle) particle [x y] [offx offy] 50 50))
     (draw-player (:player @state)
                  puyo-draw-handle
