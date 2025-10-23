@@ -88,9 +88,12 @@
 (defn player_move-right [p]
   (when p (update p :pos update 0 s+ 1 5)))
 (defn player_move-checked [p fn board]
-  (let [new-player (fn p)]
+  (let [new-player (fn p)
+        up-new-player (player_move-down new-player -1)]
     (if (player_grounded? new-player board)
-      p
+      (if (player_grounded? up-new-player board)
+        p
+        up-new-player)
       new-player)))
 
 (defn player_grounded? [player board]
@@ -332,10 +335,10 @@
               (cond
                 (and (checkTime time) (= key "ArrowLeft") (js/keyIsDown 37)) (player_move-checked p player_move-left board)
                 (and (checkTime time) (= key "ArrowRight") (js/keyIsDown 39)) (player_move-checked p player_move-right board)
-                (and (checkTime time) (= key " ") (js/keyIsDown 32)) (player_move-down p 10)
+                (and (checkTime time) (= key " ") (js/keyIsDown 32)) (assoc (player_move-down p 10) :player/groundTime 0)
                 (and (justPressed time) (= key "x")) (player_rotate p board 1)
                 (and (justPressed time) (= key "z")) (player_rotate p board 3)
-                (and (js/keyIsDown 40) (= key "ArrowDown")) (player_move-down p (/ 1 5))
+                (and (js/keyIsDown 40) (= key "ArrowDown")) (assoc (player_move-down p (/ 1 5)) :player/groundTime 0)
                 (js/keyIsDown 13) (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum)))
                 (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
                 :else p)) p keys)))
@@ -413,15 +416,26 @@
 
       (state-is state :s/player-fall)
       (if (player_grounded? (:player globalstate) (:board globalstate))
-        (let [[new-board placed-pos] (board_place-player (:board globalstate) (:player globalstate))]
+        (let [[new-board placed-pos] (board_place-player (:board globalstate) (:player globalstate))
+              placed-pos (if (:player/groundTime placed-pos) placed-pos (assoc placed-pos :player/groundTime currentTime))]
           (if new-board
-            [(-> globalstate
-                 (run-hook hook-block-land (list placed-pos))
-                 (assoc :board new-board)
-                 (assoc :player nil))
-             {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
+             (if (> (- currentTime (:player/groundTime placed-pos) ) 1000)
+               [(-> globalstate
+                    (run-hook hook-block-land (list placed-pos))
+                    (assoc :board new-board)
+                    (assoc :player nil))
+                {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
+               [(assoc globalstate :player placed-pos) state]
+               )
+             
             [(assoc globalstate :player nil) {:process :s/player-fall :next-state [:s/dead currentTime 0]}]))
-        [(update globalstate :player player_move-down (* 0.0005 deltaTime)) state])
+        (let [player (-> (:player globalstate)
+                         (player_move-down (* 0.0005 deltaTime))
+                         ((fn [player] (if (player_grounded? player (:board globalstate))
+                                        player
+                                        (dissoc player :player/groundTime))))
+                         )]
+          [(assoc globalstate :player player) state]) )
 
       (state-is state :s/fall-slow)
       (state-fall-blocks globalstate state currentTime deltaTime 0)
