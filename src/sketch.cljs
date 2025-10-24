@@ -250,14 +250,20 @@
   [p handle x y]
   (when p
     (let [px (get (:pos p) 0)
-          py (get (:pos p) 1)]
+          py (get (:pos p) 1)
+          transparency (-> (- (getTime) (:player/groundTime p)) (/ 1000) (- 1) (* -1) (* 255))
+          transparency (if (:player/groundTime p) transparency 255)]
       (doseq [blocks (:blocks p)]
         (let [bx (get blocks 0)
               by (get blocks 1)
               c (get blocks 2)
               f (get handle c)]
           (if f
+            (do
+              (js/tint 255 transparency)
             (f (+ bx px) (+ by py) x y)
+              (js/noTint)
+              )
             (throw (js/Error (str "Draw handle not implemented for " c)))))))))
 (defn draw-falling-blocks
   [blocks handle x y]
@@ -284,10 +290,12 @@
                  :pt/purple [0 19]})
 (defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos color loop? lifetime]
   (let [[colorx colory] (color pt-to-grid)
-        grid-pos (map (fn [[x y]] [(+ colorx x) (+ colory y)]) grid-pos)]
+        grid-pos (map (fn [[x y t]] [(+ colorx x) (+ colory y) (if t t 255)]) grid-pos)]
     (pcl/create-particle
      (fn [pc [x y] [ofx ofy] w h] (let [current-frame (nth grid-pos (:frame pc))]
-                                    (draw-puyo current-frame [(* x w) (* y h)] [ofx ofy] w h)))
+                                    (js/tint 255 (nth current-frame 2))
+                                    (draw-puyo current-frame [(* x w) (* y h)] [ofx ofy] w h)
+                                    (js/noTint)))
      (fn [pc] (update pc :frame (if loop? l+ s+) 1 (:max-frames pc)))
      {:frame 0 :max-frames (dec (count grid-pos)) :death (+ (getTime) lifetime)})))
 
@@ -374,7 +382,7 @@
   [(create-anim-hook #(create-puyo-animation-particle [[6 0] [7 0]] % true 200))])
 (def hook-block-pop
   [(create-anim-hook #(create-puyo-animation-particle
-                       (frame-extend [0 0] [9 0] [0 0] [9 0] [0 0] [9 0] [4 0 1] 4 [7 -1] [8 -1]) % false 700))])
+                       (frame-extend [0 0] [0 0 90] [0 0] [0 0 90] [0 0] [0 0 90] [4 0] 4 [7 -1] [8 -1]) % false 700))])
 
 
 (defn run-hook [globalstate hook & args]
