@@ -30,7 +30,7 @@
   [(+ x1 x2) (+ y1 y2)])
 (defn create-puyo [x y color]
   [x y color])
-(declare player_grounded? player_move-left player_move-right player_move-down)
+(declare player_grounded? player_move-left player_move-right player_move-down board_place-player)
 (defn create-player
   "x and y are position on grid
   rotation starts off as up
@@ -50,11 +50,17 @@
       (if (player_grounded? new-player board)
         (let [left-p (player_move-left new-player)
               right-p (player_move-right new-player)
-              up-p (player_move-down new-player -0.8)]
+              up-p (player_move-down new-player -1.01)
+              up-left-p (player_move-left up-p)
+              up-right-p (player_move-right up-p)
+              fn-land-player (fn [p board] (second (board_place-player board (player_move-down p 2))))
+              ]
           (cond
-            (not (player_grounded? up-p board)) up-p
+            (not (player_grounded? up-p board)) (fn-land-player up-p board)
             (not (player_grounded? left-p board)) left-p
             (not (player_grounded? right-p board)) right-p
+            (not (player_grounded? up-left-p board)) (fn-land-player up-left-p board)
+            (not (player_grounded? up-right-p board)) (fn-land-player up-right-p board)
             :else p))
         new-player))))
 ;; (println (player_rotate (create-player 0 0 :pt/blue :pt/blue) 1))
@@ -87,13 +93,13 @@
   (when p (update p :pos update 0 s- 1 0)))
 (defn player_move-right [p]
   (when p (update p :pos update 0 s+ 1 5)))
-(defn player_move-checked [p fn board]
-  (let [new-player (fn p)
-        up-new-player (player_move-down new-player -1)]
+(defn player_move-checked [p fun board]
+  (let [new-player (fun p)
+        up-new-player (player_move-down new-player -0.5)]
     (if (player_grounded? new-player board)
       (if (player_grounded? up-new-player board)
         p
-        up-new-player)
+        (second (board_place-player board new-player) ))
       new-player)))
 
 (defn player_grounded? [player board]
@@ -382,7 +388,9 @@
   [(create-anim-hook #(create-puyo-animation-particle [[6 0] [7 0]] % true 200))])
 (def hook-block-pop
   [(create-anim-hook #(create-puyo-animation-particle
-                       (frame-extend [0 0] [0 0 90] [0 0] [0 0 90] [0 0] [0 0 90] [4 0] 4 [7 -1] [8 -1]) % false 700))])
+                       (frame-extend [0 0] [0 0 90] [0 0] [0 0 90] [0 0] [0 0 90] [4 0] 4 [7 -1] [8 -1]) % false 700))
+   (fn [globalstate blocks]
+     (update globalstate :chain inc))])
 
 
 (defn run-hook [globalstate hook & args]
@@ -419,7 +427,8 @@
 
     (cond
       (state-is state :s/new-player)
-      [(assoc globalstate :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))
+      [(-> (assoc globalstate :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))
+           (assoc :chain 0))
        {:process :s/new-player :next-state [:s/player-fall currentTime 0]}]
 
       (state-is state :s/player-fall)
