@@ -1,8 +1,7 @@
 (ns sketch
   (:require [goog.object :as g]
             [PuyoTypes :as pt]
-            [Particle :as pcl]
-            )
+            [Particle :as pcl])
   #_{:clj-kondo/ignore [:unused-import]}
   (:import p5)
   (:require-macros [Macros :as m]))
@@ -53,8 +52,7 @@
               up-p (player_move-down new-player -1.01)
               up-left-p (player_move-left up-p)
               up-right-p (player_move-right up-p)
-              fn-land-player (fn [p board] (second (board_place-player board (player_move-down p 2))))
-              ]
+              fn-land-player (fn [p board] (second (board_place-player board (player_move-down p 2))))]
           (cond
             (not (player_grounded? up-p board)) (fn-land-player up-p board)
             (not (player_grounded? left-p board)) left-p
@@ -99,7 +97,7 @@
     (if (player_grounded? new-player board)
       (if (player_grounded? up-new-player board)
         p
-        (second (board_place-player board new-player) ))
+        (second (board_place-player board new-player)))
       new-player)))
 
 (defn player_grounded? [player board]
@@ -268,9 +266,8 @@
           (if f
             (do
               (js/tint 255 transparency)
-            (f (+ bx px) (+ by py) x y)
-              (js/noTint)
-              )
+              (f (+ bx px) (+ by py) x y)
+              (js/noTint))
             (throw (js/Error (str "Draw handle not implemented for " c)))))))))
 (defn draw-falling-blocks
   [blocks handle x y]
@@ -346,10 +343,11 @@
 
 ;; (pt/assertHandlesAllTypes puyo-draw-handle)
 
-(defn fill-piece-queue "queue is a list" [queue]
-  (if (< (count queue) 7)
-    (recur (fill-piece-queue (conj queue
-                                   (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))))
+(defn fill-piece-queue "queue is a list" [queue len]
+  (if (< (count queue) len)
+    (recur (conj queue
+                 (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))
+           2)
     queue))
 
 (defn player_input-handle [p keys das board]
@@ -371,30 +369,29 @@
 
 (defn create-anim-hook [particle-f]
   (fn [globalstate blocks]
-     (update globalstate :particles
-             #(conj
-               %
-               (reduce
-                (fn [acc block]
-                  (reduce (fn [acc block2]
-                            (let [[x y c] block2
-                                  [x y] (+v [x y] (:pos block))]
-                              (assoc acc [x y] (particle-f c)))) acc (:blocks block)))
-                {} blocks))))
-  )
+    (update globalstate :particles
+            #(conj
+              %
+              (reduce
+               (fn [acc block]
+                 (reduce (fn [acc block2]
+                           (let [[x y c] block2
+                                 [x y] (+v [x y] (:pos block))]
+                             (assoc acc [x y] (particle-f c)))) acc (:blocks block)))
+               {} blocks)))))
 
-(defn frame-extend "returns v v v v for (frame-extend v 4)"[& vecs]
+(defn frame-extend "returns v v v v for (frame-extend v 4)" [& vecs]
   ;; (println vecs)
   (->>
    (for [[a b] (partition 2 1 (concat vecs '(1)))]
-    (if  (vector? a)
-      (if (number? b)
-        (repeat b a)
-        (list a))
-      (list nil)))
-    (reduce #(concat %1 %2))
-    (filter #(not (= % nil)))
-    (vec)))
+     (if  (vector? a)
+       (if (number? b)
+         (repeat b a)
+         (list a))
+       (list nil)))
+   (reduce #(concat %1 %2))
+   (filter #(not (= % nil)))
+   (vec)))
 
 (def hook-block-land
   [(create-anim-hook #(create-puyo-animation-particle [[6 0] [7 0]] % true 200))])
@@ -402,8 +399,7 @@
   [(create-anim-hook #(create-puyo-animation-particle
                        (frame-extend [0 0] [0 0 90] [0 0] [0 0 90] [0 0] [0 0 90] [4 0] 4 [7 -1] [8 -1]) % false 700))
    (fn [globalstate blocks]
-     (update globalstate :chain inc))])
-
+     (update globalstate :chain (if (> (count blocks) 0) inc identity)))])
 
 (defn run-hook [globalstate hook & args]
   (reduce #(apply %2 %1 args) globalstate hook))
@@ -418,7 +414,7 @@
         fallingblocks (map (fn [block] (if (< (:yspeed block) minSpeed)
                                          (assoc block :yspeed minSpeed)
                                          block)) fallingblocks)
-        fallingblocks (falling-blocks_move-down fallingblocks (* deltaTime 0.0007 ))
+        fallingblocks (falling-blocks_move-down fallingblocks (* deltaTime 0.0007))
 
         [board fallingblocks placedblocks] (board_place-grounded-falling-blocks board fallingblocks)
         new-globalstate (-> globalstate
@@ -451,25 +447,23 @@
           (if new-board
             ;; if (currentTime - groundTime) > 1000, place player
             ;; else: stop player from falling through the ground
-             (if (> (- currentTime (:player/groundTime placed-pos) ) 1000)
-               [(-> globalstate
-                    (run-hook hook-block-land (list placed-pos))
-                    (assoc :board new-board)
-                    (assoc :player nil))
-                {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
-               [(assoc globalstate :player placed-pos) state]
-               )
-             
+            (if (> (- currentTime (:player/groundTime placed-pos)) 1000)
+              [(-> globalstate
+                   (run-hook hook-block-land (list placed-pos))
+                   (assoc :board new-board)
+                   (assoc :player nil))
+               {:process :s/player-fall :next-state [:s/fall-slow currentTime 100]}]
+              [(assoc globalstate :player placed-pos) state])
+
             [(assoc globalstate :player nil) {:process :s/player-fall :next-state [:s/dead currentTime 0]}]))
         ;; player is not on ground so let player move down
         ;; if player doesn't land on the ground, remove ground time
         (let [player (-> (:player globalstate)
                          (player_move-down (* 0.0005 deltaTime))
                          ((fn [player] (if (player_grounded? player (:board globalstate))
-                                        player
-                                        (dissoc player :player/groundTime))))
-                         )]
-          [(assoc globalstate :player player) state]) )
+                                         player
+                                         (dissoc player :player/groundTime)))))]
+          [(assoc globalstate :player player) state]))
 
       (state-is state :s/fall-slow)
       (state-fall-blocks globalstate state currentTime deltaTime 0)
@@ -502,11 +496,12 @@
   ;; (println @state)
   ;; (println (:falling-blocks @state))
   ;; (println (:keys @state))
+  (println (:chain @state))
   (let [[new-state new-state-enum] (state-update @state (:state-enum @state) (getTime) js/deltaTime)]
     (reset! state new-state)
     (swap! state assoc :state-enum new-state-enum))
 
-  (swap! state update :piece-queue fill-piece-queue)
+  (swap! state update :piece-queue fill-piece-queue 2)
 
   (when (> (- (getTime) (:timer/updateTime @timer)) (:timer/dt @timer))
     (swap! timer assoc :timer/updateTime (getTime))
