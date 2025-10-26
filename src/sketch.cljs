@@ -217,8 +217,9 @@
                 {:board (create-board 12 6 [:pt/empty])
                  :player (create-player 2 0 :pt/red :pt/red)
                  :particles {}
-                 :state-enum {:process :s/player-fall}
+                 :state-enum {:process :s/pop}
                  :chain 0
+                 :piece-queue #queue []
                  :das 131 ;; ms
                  :textures {}
                  :fonts {}
@@ -277,6 +278,11 @@
     (doseq [block blocks]
       ;; (println (first block ))
       (draw-player block handle x y))))
+(defn draw-piece-queue
+  [queue handle x y]
+  (when queue
+    (doseq [[idx player] (map-indexed vector queue)]
+      (draw-player player handle x (+ (* 130 idx) y)))))
 
 (defn draw-sprite
   ([texture [ix iy iw ih] [dx dy dw dh]]
@@ -339,6 +345,12 @@
    :pt/purple (puyo-drawer-generator 0 19 :pt/purple)})
 
 ;; (pt/assertHandlesAllTypes puyo-draw-handle)
+
+(defn fill-piece-queue "queue is a list" [queue]
+  (if (< (count queue) 7)
+    (recur (fill-piece-queue (conj queue
+                                   (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))))
+    queue))
 
 (defn player_input-handle [p keys das board]
   (let [dt (fn [time] (- (getTime) time))
@@ -427,7 +439,8 @@
 
     (cond
       (state-is state :s/new-player)
-      [(-> (assoc globalstate :player (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))
+      [(-> (assoc globalstate :player (peek (:piece-queue globalstate)))
+           (update :piece-queue pop)
            (assoc :chain 0))
        {:process :s/new-player :next-state [:s/player-fall currentTime 0]}]
 
@@ -436,6 +449,8 @@
         (let [[new-board placed-pos] (board_place-player (:board globalstate) (:player globalstate))
               placed-pos (if (:player/groundTime placed-pos) placed-pos (assoc placed-pos :player/groundTime currentTime))]
           (if new-board
+            ;; if (currentTime - groundTime) > 1000, place player
+            ;; else: stop player from falling through the ground
              (if (> (- currentTime (:player/groundTime placed-pos) ) 1000)
                [(-> globalstate
                     (run-hook hook-block-land (list placed-pos))
@@ -446,6 +461,8 @@
                )
              
             [(assoc globalstate :player nil) {:process :s/player-fall :next-state [:s/dead currentTime 0]}]))
+        ;; player is not on ground so let player move down
+        ;; if player doesn't land on the ground, remove ground time
         (let [player (-> (:player globalstate)
                          (player_move-down (* 0.0005 deltaTime))
                          ((fn [player] (if (player_grounded? player (:board globalstate))
@@ -489,6 +506,8 @@
     (reset! state new-state)
     (swap! state assoc :state-enum new-state-enum))
 
+  (swap! state update :piece-queue fill-piece-queue)
+
   (when (> (- (getTime) (:timer/updateTime @timer)) (:timer/dt @timer))
     (swap! timer assoc :timer/updateTime (getTime))
     (let [particles (:particles @state)
@@ -522,7 +541,10 @@
     (js/text  (str "chain " (:chain @state) "fps: " (Math/round (js/frameRate))) -300 0)
     (draw-falling-blocks (:falling-blocks @state)
                          puyo-draw-handle
-                         offx offy)))
+                         offx offy)
+    (draw-piece-queue (:piece-queue @state)
+                      puyo-draw-handle
+                      (+ offx 200) offy)))
 
 (defn windowResized []
   (js/resizeCanvas js/window.innerWidth js/window.innerHeight))
