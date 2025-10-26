@@ -107,7 +107,8 @@
           pos (:pos player)
           x (get pos 0)
           y (get pos 1)
-          y (js/ceil y)
+          y (js/floor y)
+          y (+ y 1)
           block-pos (map (fn [block]
                            (let [bx (get block 0)
                                  by (get block 1)
@@ -212,7 +213,7 @@
      ]))
 
 (defonce state (atom
-                {:board (create-board 12 6 [:pt/empty])
+                {:board (create-board 14 6 [:pt/empty])
                  :player (create-player 2 0 :pt/red :pt/red)
                  :particles {}
                  :state-enum {:process :s/pop}
@@ -232,7 +233,7 @@
   each key in the map corresponds to an element in v
   "
   [v handle x y]
-  (dotimes [row (count v)]
+  (dotimes [row (count v)] ;; 2 hidden rows
     (dotimes [col (count (get v 0))]
       (when (not (contains? (:particles @state) [col row]))
         (let [el (board-get-type v [col row])
@@ -308,6 +309,16 @@
      (fn [pc] (update pc :frame (if loop? l+ s+) 1 (:max-frames pc)))
      {:frame 0 :max-frames (dec (count grid-pos)) :death (+ (getTime) lifetime)})))
 
+
+(defn create-text-particle "grid pos is a list of [sx sy]" [draw-text [posx posy] lifetime]
+    (pcl/create-particle
+     (fn [pc [x y] [ofx ofy] w h]
+       (js/fill "white")
+       (js/textSize 22)
+       (js/text draw-text (+ ofx (* posx w) ) (+ ofy (* posy h))))
+     (fn [pc] pc)
+     {:death (+ (getTime) lifetime)}))
+
 (defn =i [& terms]
   (if (apply = terms) 1 0))
 (defn puyo-drawer-generator [sx sy color]
@@ -359,10 +370,12 @@
               (cond
                 (and (checkTime time) (= key "ArrowLeft") (js/keyIsDown 37)) (player_move-checked p player_move-left board)
                 (and (checkTime time) (= key "ArrowRight") (js/keyIsDown 39)) (player_move-checked p player_move-right board)
-                (and (checkTime time) (= key " ") (js/keyIsDown 32)) (assoc (player_move-down p 10) :player/groundTime 0)
+                (and (checkTime time) (= key " ") (js/keyIsDown 32)) (assoc (player_move-down p 40) :player/groundTime -1000)
                 (and (justPressed time) (= key "x")) (player_rotate p board 1)
                 (and (justPressed time) (= key "z")) (player_rotate p board 3)
-                (and (js/keyIsDown 40) (= key "ArrowDown")) (assoc (player_move-down p (/ 1 5)) :player/groundTime 0)
+                (and (js/keyIsDown 40) (= key "ArrowDown")) (-> (player_move-down p (/ 1 5))
+                                                             ((fn [p] (assoc p :player/groundTime
+                                                                    (if (player_grounded? p board) -1000 nil)))))
                 (js/keyIsDown 13) (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum)))
                 (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
                 :else p)) p keys)))
@@ -399,7 +412,20 @@
   [(create-anim-hook #(create-puyo-animation-particle
                        (frame-extend [0 0] [0 0 90] [0 0] [0 0 90] [0 0] [0 0 90] [4 0] 4 [7 -1] [8 -1]) % false 700))
    (fn [globalstate blocks]
-     (update globalstate :chain (if (> (count blocks) 0) inc identity)))])
+     (update globalstate :chain (if (> (count blocks) 0) inc identity)))
+   (fn [globalstate blocks]
+     (if blocks
+     (let [[minx miny] (reduce
+                        (fn [[minx miny] block]
+                          (let [[x y] (:pos block)]
+                            [(if (< x minx) x minx) (if (< y miny) y miny)]))
+                        [999 999]
+                        blocks)
+           particle (create-text-particle (str (:chain globalstate) "chain") [(- minx 1) (- miny 1)] 1000)]
+     (assoc-in globalstate [:particles [-1 -1]] particle))
+     globalstate))]
+       )
+
 
 (defn run-hook [globalstate hook & args]
   (reduce #(apply %2 %1 args) globalstate hook))
@@ -492,11 +518,10 @@
   (js/noStroke))
 
 (defn draw []
-  (swap! state update :player player_input-handle (:keys @state) (:das @state) (:board @state))
   ;; (println @state)
   ;; (println (:falling-blocks @state))
   ;; (println (:keys @state))
-  (println (:chain @state))
+  ;; (println (:chain @state))
   (let [[new-state new-state-enum] (state-update @state (:state-enum @state) (getTime) js/deltaTime)]
     (reset! state new-state)
     (swap! state assoc :state-enum new-state-enum))
@@ -515,6 +540,10 @@
                          particles)]
       (swap! state assoc :particles new-particles)))
 
+  (swap! state update :player player_input-handle (:keys @state) (:das @state) (:board @state))
+
+  ;; (println (:particles @state))
+
   (js/background "gray")
   (js/fill "yellow")
   ;; (let [offx js/window.innerWidth
@@ -522,7 +551,7 @@
   ;;       offx (/ offx 3)
   ;;       offy (/ offy 5)]
   (let [offx -200
-        offy -300]
+        offy -400]
     (draw-board (:board @state)
                 puyo-draw-handle
                 offx offy)
@@ -532,8 +561,13 @@
     (draw-player (:player @state)
                  puyo-draw-handle
                  offx offy)
-    (js/color "yellow")
-    (js/text  (str "chain " (:chain @state) "fps: " (Math/round (js/frameRate))) -300 0)
+    (js/stroke "gray")
+    (js/fill "gray")
+    (js/rect (- offx 25) (- offy 25) 300 100)
+    (js/noStroke)
+    (js/fill "yellow")
+    (js/textSize 22)
+    (js/text  (str "chain " (:chain @state) "fps: " (Math/round (js/frameRate))) -400 0)
     (draw-falling-blocks (:falling-blocks @state)
                          puyo-draw-handle
                          offx offy)
