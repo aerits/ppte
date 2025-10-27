@@ -253,23 +253,25 @@
             (println (str "Draw handle not implemented for " el))))))))
 
 (defn draw-player
-  [p handle x y]
-  (when p
-    (let [px (get (:pos p) 0)
-          py (get (:pos p) 1)
-          transparency (-> (- (getTime) (:player/groundTime p)) (/ 1000) (- 1) (* -1) (* 255))
-          transparency (if (:player/groundTime p) transparency 255)]
-      (doseq [blocks (:blocks p)]
-        (let [bx (get blocks 0)
-              by (get blocks 1)
-              c (get blocks 2)
-              f (get handle c)]
-          (if f
-            (do
-              (js/tint 255 transparency)
-              (f (+ bx px) (+ by py) x y)
-              (js/noTint))
-            (throw (js/Error (str "Draw handle not implemented for " c)))))))))
+  ([p handle x y opacity]
+   (when p
+     (let [px (get (:pos p) 0)
+           py (get (:pos p) 1)]
+       (doseq [blocks (:blocks p)]
+         (let [bx (get blocks 0)
+               by (get blocks 1)
+               c (get blocks 2)
+               f (get handle c)]
+           (if f
+             (do
+               (js/tint 255 opacity)
+               (f (+ bx px) (+ by py) x y)
+               (js/noTint))
+             (throw (js/Error (str "Draw handle not implemented for " c)))))))))
+  ([p handle x y]
+   (let [transparency (-> (- (getTime) (:player/groundTime p)) (/ 1000) (- 1) (* -1) (* 255))
+         transparency (if (:player/groundTime p) transparency 255)]
+     (draw-player p handle x y transparency))))
 (defn draw-falling-blocks
   [blocks handle x y]
   (when blocks
@@ -309,15 +311,13 @@
      (fn [pc] (update pc :frame (if loop? l+ s+) 1 (:max-frames pc)))
      {:frame 0 :max-frames (dec (count grid-pos)) :death (+ (getTime) lifetime)})))
 
-
-(defn create-text-particle "grid pos is a list of [sx sy]" [draw-text [posx posy] lifetime]
-    (pcl/create-particle
-     (fn [pc [x y] [ofx ofy] w h]
-       (js/fill "white")
-       (js/textSize 22)
-       (js/text draw-text (+ ofx (* posx w) ) (+ ofy (* posy h))))
-     (fn [pc] pc)
-     {:death (+ (getTime) lifetime)}))
+(defn create-text-particle "grid pos is a list of [sx sy]" [draw-text [posx posy] fn-p5-style lifetime]
+  (pcl/create-particle
+   (fn [pc [x y] [ofx ofy] w h]
+     (fn-p5-style
+      (fn [] (js/text draw-text (+ ofx (* posx w)) (+ ofy (* posy h))))))
+   (fn [pc] pc)
+   {:death (+ (getTime) lifetime)}))
 
 (defn =i [& terms]
   (if (apply = terms) 1 0))
@@ -374,8 +374,8 @@
                 (and (justPressed time) (= key "x")) (player_rotate p board 1)
                 (and (justPressed time) (= key "z")) (player_rotate p board 3)
                 (and (js/keyIsDown 40) (= key "ArrowDown")) (-> (player_move-down p (/ 1 5))
-                                                             ((fn [p] (assoc p :player/groundTime
-                                                                    (if (player_grounded? p board) -1000 nil)))))
+                                                                ((fn [p] (assoc p :player/groundTime
+                                                                                (if (player_grounded? p board) -1000 nil)))))
                 (js/keyIsDown 13) (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum)))
                 (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
                 :else p)) p keys)))
@@ -415,17 +415,24 @@
      (update globalstate :chain (if (> (count blocks) 0) inc identity)))
    (fn [globalstate blocks]
      (if blocks
-     (let [[minx miny] (reduce
-                        (fn [[minx miny] block]
-                          (let [[x y] (:pos block)]
-                            [(if (< x minx) x minx) (if (< y miny) y miny)]))
-                        [999 999]
-                        blocks)
-           particle (create-text-particle (str (:chain globalstate) "chain") [(- minx 1) (- miny 1)] 1000)]
-     (assoc-in globalstate [:particles [-1 -1]] particle))
-     globalstate))]
-       )
-
+       (let [[minx miny] (reduce
+                          (fn [[minx miny] block]
+                            (let [[x y] (:pos block)]
+                              [(if (< x minx) x minx) (if (< y miny) y miny)]))
+                          [999 999]
+                          blocks)
+             particle (create-text-particle
+                       (str (:chain globalstate) "chain")
+                       [(- minx 1) (- miny 1)]
+                       (fn [fn-draw]
+                         (js/fill "white")
+                         (js/textSize 22)
+                         (js/stroke "black")
+                         (js/strokeWeight 10)
+                         (fn-draw))
+                       1000)]
+         (assoc-in globalstate [:particles [-1 -1]] particle))
+       globalstate))])
 
 (defn run-hook [globalstate hook & args]
   (reduce #(apply %2 %1 args) globalstate hook))
@@ -558,16 +565,29 @@
     (doseq [[[x y] particle] (:particles @state)]
       ;; (println (str [x y] particle))
       ((:on-draw particle) particle [x y] [offx offy] 50 50))
+
+    ;; draw ghost piece
+    (draw-player (last (board_place-player (:board @state) (player_move-down (:player @state) 20)))
+                 puyo-draw-handle
+                 offx offy
+                 80)
+    ;; draw actual player
     (draw-player (:player @state)
                  puyo-draw-handle
                  offx offy)
+
+    ;; cover up hidden rows
     (js/stroke "gray")
     (js/fill "gray")
     (js/rect (- offx 25) (- offy 25) 300 100)
     (js/noStroke)
+
+    ;; debug info
     (js/fill "yellow")
     (js/textSize 22)
     (js/text  (str "chain " (:chain @state) "fps: " (Math/round (js/frameRate))) -400 0)
+
+    ;; misc
     (draw-falling-blocks (:falling-blocks @state)
                          puyo-draw-handle
                          offx offy)
