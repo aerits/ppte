@@ -593,7 +593,14 @@
                          offx offy)
     (draw-piece-queue (:piece-queue @state)
                       puyo-draw-handle
-                      (+ offx 200) offy)))
+                      (+ offx 200) offy)
+    (when-not (.hasFocus js/document)
+      (println "no-focus")
+     (js/fill "white")
+     (js/textSize 40)
+     (js/text "click to focus window" -200 0)
+     )
+    ))
 
 (defn windowResized []
   (js/resizeCanvas js/window.innerWidth js/window.innerHeight))
