@@ -7,6 +7,7 @@
                  [io.pedestal/pedestal.http-kit "0.8.1"]
                  [org.slf4j/slf4j-simple "2.0.17"]
                  [org.clojure/data.json "2.5.1"]
+                 [nrepl/nrepl "1.4.0"]
                  ]
   :main ^:skip-aot server.core
   :target-path "target/%s"

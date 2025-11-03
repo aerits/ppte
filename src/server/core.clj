@@ -8,7 +8,8 @@
             [io.pedestal.http.http-kit :as hk]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [nrepl.server :as nrepl])
   (:gen-class))
 
 (def header-interceptor
@@ -34,18 +35,33 @@
 (create-content-type html "text/html")
 (create-content-type json "application/json")
 
-(defn greet [request]
-  (-> (ok (json/write-str {"bruh" :a}))
+(defmacro defroute
+  {:clj-kondo/lint-as 'clojure.core/defn}
+  [name args & body]
+  `(do
+     (defn ~(symbol (str name "--route")) ~args
+                  ~@body)
+     (defn ~name ~args
+       (~(symbol (str name "--route")) ~args)))
+  )
+
+(macroexpand-1
+ '(defroute index [request]
+  (-> (ok "hi ppte <br> <a href='game'>play</a>")
+      (html))))
+
+(defroute greet [request]
+  (-> (ok (json/write-str {"bruh" :b}))
       (json)))
 
-(defn game [request]
+(defroute game [request]
   (-> (ok "<!DOCTYPE html><head></head><body>
 <iframe src='/index.html' height='800px' width='600px'></iframe>
 </body></html>")
       (html)))
 
-(defn index [request]
-  (-> (ok "hi chat <br> <a href='game'>play</a>")
+(defroute index [request]
+  (-> (ok "hi <br> <a href='game'>play</a>")
       (html)))
 
 (defmacro create-routes
@@ -96,6 +112,7 @@
 ;; For interactive development
 (defonce *connector (atom nil))
 
+
 (defn start [& {:as args}]
   (reset! *connector
           (conn/start! (create-connector args))))
@@ -108,10 +125,11 @@
   (stop)
   (start))
 
-(when @*connector (restart))
-
 (defn -main [& {:as args}]
+  (nrepl/start-server :port 7888)
   (start
+   ;; convert map keys from strings into keywords
+   ;; will probably fail if you put a bad format in program args
    (into {} (map (fn [[k v]] [(-> (rest k)
                                   (str/join)
                                   (keyword))
