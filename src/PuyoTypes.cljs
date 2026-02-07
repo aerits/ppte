@@ -1,8 +1,8 @@
 (ns PuyoTypes
- (:require-macros [ Macros :as m ]) )
+  (:require-macros [Macros :as m]))
 
-(def enum [:pt/empty :pt/red :pt/green :pt/blue :pt/yellow :pt/purple])
-
+(def enum [:pt/empty :pt/garbage :pt/red :pt/green :pt/blue :pt/yellow :pt/purple])
+(def constructable (-> (into #{} enum) (disj :pt/garbage) (disj :pt/empty) ((fn [x] (into [] x)))))
 
 ;; (def all-types [empty-cell red-puyo green-puyo blue-puyo yellow-puyo purple-puyo] )
 ;; (m/enumGenerator all-types)
