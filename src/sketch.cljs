@@ -1,7 +1,8 @@
 (ns sketch
   (:require [goog.object :as g]
             [PuyoTypes :as pt]
-            [Particle :as pcl])
+            [Particle :as pcl]
+            [clojure.string :as str])
   #_{:clj-kondo/ignore [:unused-import]}
   (:import p5)
   (:require-macros [Macros :as m]))
@@ -13,6 +14,16 @@
 
 (defn getTime []
   (js/performance.now))
+
+(defn request-to-keywords [req]
+  (when req
+    (into {} (for [[_ k v] (re-seq #"([^&=]+)=([^&]+)" req)]
+               [(keyword k) v]))))
+(defn keyword-map []
+  (-> (str/split js/window.location.href #"\?")
+      (second)
+      (request-to-keywords)))
+
 (defmacro with [f-begin f-end & body]
   (f-begin)
   `(~@body)
@@ -179,6 +190,21 @@
       (reduce #(dfs board %2 color %1) (conj visited [x y]) neighbors))
     visited))
 
+(defn board_pop-puyos--find-garbage "returns [[x y c]]"
+  ([board blocks-to-remove]
+   (board_pop-puyos--find-garbage board blocks-to-remove []))
+  ([board blocks-to-remove garbage-blocks]
+   (if (seq blocks-to-remove)
+     (let [dirs [[-1 0] [1 0] [0 1] [0 -1]]
+           [bx by _bc] (first blocks-to-remove)
+           blocks (for [[x y] dirs]
+                    (if (= (board-get-type board (+v [x y] [bx by])) :pt/garbage)
+                      (conj (+v [x y] [bx by]) :pt/garbage)
+                      nil))
+           blocks (filter #(not (nil? %)) blocks)]
+       (board_pop-puyos--find-garbage board (rest blocks-to-remove) (concat garbage-blocks blocks)))
+     garbage-blocks)))
+
 (defn board_pop-puyos "returns [board [num-puyos-popped colors] popped-blocks], colors is hashset" [board]
   (let [rows (count board)
         cols (count (get board 0))
@@ -190,12 +216,16 @@
         blocks-to-remove (filter #(not (= nil %)) blocks-to-remove)
         blocks-to-remove (filter #(>= (last %) 4) blocks-to-remove)
         blocks-to-remove (map (fn [[x y c _]] [x y c]) blocks-to-remove)
+        blocks-to-remove (->> (concat blocks-to-remove (board_pop-puyos--find-garbage board blocks-to-remove))
+                              (filter #(seq %)))
         popped-blocks (map (fn [[x y c]] (create-falling-block x y c)) blocks-to-remove)]
+    (println blocks-to-remove)
     (reduce
      (fn [[board puyos-popped# colors] [x y c]]
        [(assoc-in board [y x] [:pt/empty]) (inc puyos-popped#) (conj colors c) popped-blocks])
      [board 0 #{}]
      blocks-to-remove)))
+
 (defn board_get-falling-puyos "returns [board [p1 p2 p3 ..]]" [board]
   (let [rows (count board)
         cols (count (get board 0))
@@ -209,8 +239,7 @@
         falling (map (fn [[x y c]] (create-falling-block x y c)) blocks-to-remove)
         blocks-to-remove (map (fn [[x y _]] [x y]) blocks-to-remove)]
     [(reduce (fn [board [x y]] (assoc-in board [y x] [:pt/empty])) board blocks-to-remove)
-     (vec falling) ;; same as a player
-     ]))
+     (vec falling)])) ;; same as a player
 
 (defonce state (atom
                 {:board (create-board 14 6 [:pt/empty])
@@ -321,45 +350,52 @@
 
 (defn =i [& terms]
   (if (apply = terms) 1 0))
-(defn puyo-drawer-generator [sx sy color]
+
+(defn puyo-drawer-variants [check-colors color-string]
+  (cond (check-colors "0000") [0 0]
+        (check-colors "0001") [1 -3]
+        (check-colors "0010") [3 -3]
+        (check-colors "0011") [2 -3]
+        (check-colors "0100") [0 -3]
+        (check-colors "0101") [1 -2]
+        (check-colors "0110") [3 -2]
+        (check-colors "0111") [2 -2]
+        (check-colors "1000") [0 -1]
+        (check-colors "1001") [1 0]
+        (check-colors "1010") [3 0]
+        (check-colors "1011") [2 0]
+        (check-colors "1100") [0 -2]
+        (check-colors "1101") [1 -1]
+        (check-colors "1110") [3 -1]
+        (check-colors "1111") [2 -1]
+        :else (throw (js/Error. (str "Invalid state:" color-string)))))
+
+(defn puyo-drawer-generator [sx sy color variants-fn]
   (fn [x y ofx ofy [right left up down]]
     (let [color-string (str (=i color up) (=i color down) (=i color left) (=i color right))
           check-colors (fn [int] (= int color-string))
-          [sx-offset sy-offset] (cond (check-colors "0000") [0 0]
-                                      (check-colors "0001") [1 -3]
-                                      (check-colors "0010") [3 -3]
-                                      (check-colors "0011") [2 -3]
-                                      (check-colors "0100") [0 -3]
-                                      (check-colors "0101") [1 -2]
-                                      (check-colors "0110") [3 -2]
-                                      (check-colors "0111") [2 -2]
-                                      (check-colors "1000") [0 -1]
-                                      (check-colors "1001") [1 0]
-                                      (check-colors "1010") [3 0]
-                                      (check-colors "1011") [2 0]
-                                      (check-colors "1100") [0 -2]
-                                      (check-colors "1101") [1 -1]
-                                      (check-colors "1110") [3 -1]
-                                      (check-colors "1111") [2 -1]
-                                      :else (throw (js/Error. (str "Invalid state:" color-string))))]
+          [sx-offset sy-offset] (variants-fn check-colors color-string)]
       ;; (println color-string)
       (draw-puyo [(+ sx-offset sx) (+ sy-offset sy)] [(* x 50) (* y 50)] [ofx ofy] 54 51))))
 (def puyo-draw-handle
   {:pt/empty (fn [x y ofx ofy] (js/fill "yellow") (js/circle (+ ofx (* x 50)) (+ ofy (* y 50)) 10))
-   :pt/red (puyo-drawer-generator 0 3 :pt/red)
-   :pt/green (puyo-drawer-generator 0 7 :pt/green)
-   :pt/blue (puyo-drawer-generator 0 11 :pt/blue)
-   :pt/yellow (puyo-drawer-generator 0 15 :pt/yellow)
-   :pt/purple (puyo-drawer-generator 0 19 :pt/purple)})
+   :pt/red (puyo-drawer-generator 0 3 :pt/red puyo-drawer-variants)
+   :pt/green (puyo-drawer-generator 0 7 :pt/green puyo-drawer-variants)
+   :pt/blue (puyo-drawer-generator 0 11 :pt/blue puyo-drawer-variants)
+   :pt/yellow (puyo-drawer-generator 0 15 :pt/yellow puyo-drawer-variants)
+   :pt/purple (puyo-drawer-generator 0 19 :pt/purple puyo-drawer-variants)
+   :pt/garbage (puyo-drawer-generator 23 0 :pt/garbage (fn [_ _] [0 0]))})
 
 ;; (pt/assertHandlesAllTypes puyo-draw-handle)
 
 (defn fill-piece-queue "queue is a list" [queue len]
   (if (< (count queue) len)
     (recur (conj queue
-                 (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum))))
+                 (create-player 2 0 (rand-nth pt/constructable) (rand-nth pt/constructable)))
            2)
     queue))
+
+(println pt/constructable)
 
 (defn player_input-handle [p keys das board]
   (let [dt (fn [time] (- (getTime) time))
@@ -376,8 +412,8 @@
                 (and (js/keyIsDown 40) (= key "ArrowDown")) (-> (player_move-down p (/ 1 5))
                                                                 ((fn [p] (assoc p :player/groundTime
                                                                                 (if (player_grounded? p board) -1000 nil)))))
-                (js/keyIsDown 13) (create-player 2 0 (rand-nth (rest pt/enum)) (rand-nth (rest pt/enum)))
-                (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth (rest pt/enum)))] :pos [2 0]}
+                (js/keyIsDown 13) (create-player 2 0 (rand-nth pt/constructable) (rand-nth pt/constructable))
+                (js/keyIsDown 49) {:blocks [(create-puyo 0 0 (rand-nth pt/enum))] :pos [2 0]}
                 :else p)) p keys)))
 
 (defn create-anim-hook [particle-f]
@@ -467,6 +503,9 @@
         [globalstate state]))
 
     (cond
+      (state-is state :s/dead)
+      [globalstate state]
+
       (state-is state :s/new-player)
       [(-> (assoc globalstate :player (peek (:piece-queue globalstate)))
            (update :piece-queue pop)
@@ -596,11 +635,9 @@
                       (+ offx 200) offy)
     (when-not (.hasFocus js/document)
       (println "no-focus")
-     (js/fill "white")
-     (js/textSize 40)
-     (js/text "click to focus window" -200 0)
-     )
-    ))
+      (js/fill "white")
+      (js/textSize 40)
+      (js/text "click to focus window" -200 0))))
 
 (defn windowResized []
   (js/resizeCanvas js/window.innerWidth js/window.innerHeight))
@@ -612,10 +649,15 @@
   (println (str "releasing " js/key))
   (swap! state update :keys dissoc js/key))
 
-(doto js/window
-  (g/set "preload" preload)
-  (g/set "setup" setup)
-  (g/set "draw" draw)
-  (g/set "windowResized" windowResized)
-  (g/set "keyPressed" keyPressed))
+(defn main []
+  (println "this is main" (keyword-map)))
+
+(if (:play (keyword-map))
+  (doto js/window
+    (g/set "preload" preload)
+    (g/set "setup" setup)
+    (g/set "draw" draw)
+    (g/set "windowResized" windowResized)
+    (g/set "keyPressed" keyPressed))
+  (main))
   ;; (g/set "keyReleased" keyReleased))
