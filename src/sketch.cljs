@@ -86,6 +86,34 @@
 (defn falling-blocks_move-down [blocks accel]
   ;; (println blocks)
   (map #(falling-block_move-down % accel) blocks))
+(defn garbage-puyo_create "returns falling-blocks"
+  ([falling-blocks num]
+   (garbage-puyo_create falling-blocks num 0))
+
+  ([falling-blocks num layer]
+   (cond
+     (< num 6)
+     (let [blocks (for [i (range 6)]
+                    (create-falling-block i layer :pt/garbage))
+           num-to-remove (- 6 num)]
+       (loop [blocks (into #{} blocks)
+              num-to-remove num-to-remove]
+         (if (> num-to-remove 0)
+           (recur (disj blocks (rand-nth (into [] blocks))) (dec num-to-remove))
+           (concat falling-blocks (into [] blocks)))))
+
+     (= num 6)
+     (let [blocks (for [i (range 6)]
+                    (create-falling-block i layer :pt/garbage))]
+       (concat falling-blocks blocks))
+
+     (> num 6)
+     (->
+      (garbage-puyo_create falling-blocks 6 layer)
+      (garbage-puyo_create (- num 6) (- layer 1))))))
+
+(print (garbage-puyo_create [] 14))
+
 (defn s+ "addition with max, never go over max" [x y max]
   (if (>= x max)
     max
@@ -210,7 +238,7 @@
         cols (count (get board 0))
         blocks-to-remove
         (for [y (range rows) x (range cols)]
-          (when (not (= :pt/empty (board-get-type board [x y])))
+          (when ((into #{} pt/constructable) (board-get-type board [x y]))
             [x y (board-get-type board [x y]) (count (dfs board [x y] (board-get-type board [x y]) #{}))]))
 
         blocks-to-remove (filter #(not (= nil %)) blocks-to-remove)
@@ -252,7 +280,7 @@
                  :textures {}
                  :fonts {}
                  :keys {}
-                 :falling-blocks []}))
+                 :falling-blocks (garbage-puyo_create [] 10)}))
 (def timer (atom {:timer/lastUpdate (getTime) :timer/dt 50}))
 ;; (def fb (js/createFramebuffer))
 (defn draw-board
