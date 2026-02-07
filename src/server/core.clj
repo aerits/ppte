@@ -5,6 +5,7 @@
             [io.pedestal.http.ring-middlewares :as ring-middlewares]
             [io.pedestal.http.route :as route]
             [io.pedestal.service.resources :as resources]
+            [io.pedestal.service.websocket :as webs]
             [io.pedestal.http.http-kit :as hk]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
@@ -40,23 +41,24 @@
   [name args & body]
   `(do
      (defn ~(symbol (str name "--route")) ~args
-                  ~@body)
+       ~@body)
      (defn ~name ~args
-       (~(symbol (str name "--route")) ~args)))
-  )
+       (~(symbol (str name "--route")) ~args))))
 
 (macroexpand-1
  '(defroute index [request]
-  (-> (ok "hi ppte <br> <a href='game'>play</a>")
-      (html))))
+    (-> (ok "hi ppte <br> <a href='game'>play</a>")
+        (html))))
 
 (defroute greet [request]
   (-> (ok (json/write-str {"bruh" :b}))
       (json)))
 
 (defroute game [request]
-  (-> (ok "<!DOCTYPE html><head></head><body>
-<iframe src='/index.html' height='800px' width='600px'></iframe>
+  (-> (ok "<!DOCTYPE html><head>
+<script src='js/main.js'></script>
+</head><body>
+<iframe src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
 </body></html>")
       (html)))
 
@@ -64,28 +66,35 @@
   (-> (ok "hi <br> <a href='game'>play</a>")
       (html)))
 
+(defroute ws [request]
+  (-> (ok "yay")
+      (html)))
+
 (defmacro create-routes
   {:clj-kondo/lint-as 'clojure.core/def}
-  [name & routes]
-  `(def ~name
-     #{~@(-> (for [route routes]
-               (cond
-                 (contains? route :fn)
-                 (let [route (:fn route)]
-                   {:name
-                    (if (= "index" (str route)) "/" (str "/" route))
-                    :get route
-                    :route-name (keyword (str route "-route"))})
+  [& routes]
+  `#{~@(-> (for [route routes]
+             (cond
+               (contains? route :fn)
+               (let [route (:fn route)]
+                 {:name
+                  (if (= "index" (str route)) "/" (str "/" route))
+                  :get route
+                  :route-name (keyword (str route "-route"))})
 
-                 :else (throw (Exception. "bad args"))))
-             (flatten)
-             (#(map
-                (fn [el] [(:name el) :get (:get el) :route-name (:route-name el)]) %)))}))
+               :else (throw (Exception. "bad args"))))
+           (flatten)
+           (#(map
+              (fn [el] [(:name el) :get (:get el) :route-name (:route-name el)]) %)))})
 
-(create-routes routes
-               {:fn greet}
-               {:fn game}
-               {:fn index})
+(def ws-options {:on-text (fn [chan obj str] (println str))})
+
+(def routes
+  (-> (create-routes
+       {:fn greet}
+       {:fn game}
+       {:fn index})
+      (conj ["/ws" :get [(webs/websocket-interceptor nil ws-options) ws] :route-name :ws])))
 
 (defn create-connector [& {:keys [port]
                            :or {port "8890"}
@@ -111,7 +120,6 @@
 
 ;; For interactive development
 (defonce *connector (atom nil))
-
 
 (defn start [& {:as args}]
   (reset! *connector
