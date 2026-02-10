@@ -58,7 +58,7 @@
   (-> (ok "<!DOCTYPE html><head>
 <script src='js/main.js'></script>
 </head><body>
-<iframe src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
+<iframe id='frame1' src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
 </body></html>")
       (html)))
 
@@ -71,7 +71,6 @@
       (html)))
 
 (defmacro create-routes
-  {:clj-kondo/lint-as 'clojure.core/def}
   [& routes]
   `#{~@(-> (for [route routes]
              (cond

@@ -2,7 +2,8 @@
   (:require [goog.object :as g]
             [PuyoTypes :as pt]
             [Particle :as pcl]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.core.async :as a])
   #_{:clj-kondo/ignore [:unused-import]}
   (:import p5)
   (:require-macros [Macros :as m]))
@@ -110,9 +111,7 @@
      (> num 6)
      (->
       (garbage-puyo_create falling-blocks 6 layer)
-      (garbage-puyo_create (- num 6) (- layer 1))))))
-
-(print (garbage-puyo_create [] 14))
+      (recur (- num 6) (- layer 1))))))
 
 (defn s+ "addition with max, never go over max" [x y max]
   (if (>= x max)
@@ -247,7 +246,6 @@
         blocks-to-remove (->> (concat blocks-to-remove (board_pop-puyos--find-garbage board blocks-to-remove))
                               (filter #(seq %)))
         popped-blocks (map (fn [[x y c]] (create-falling-block x y c)) blocks-to-remove)]
-    (println blocks-to-remove)
     (reduce
      (fn [[board puyos-popped# colors] [x y c]]
        [(assoc-in board [y x] [:pt/empty]) (inc puyos-popped#) (conj colors c) popped-blocks])
@@ -277,10 +275,12 @@
                  :chain 0
                  :piece-queue #queue []
                  :das 131 ;; ms
-                 :textures {}
-                 :fonts {}
                  :keys {}
                  :falling-blocks (garbage-puyo_create [] 10)}))
+(defonce resources
+  (atom {:textures {}
+         :fonts {}}))
+
 (def timer (atom {:timer/lastUpdate (getTime) :timer/dt 50}))
 ;; (def fb (js/createFramebuffer))
 (defn draw-board
@@ -349,16 +349,23 @@
 
 (defn draw-puyo [[sx sy] [x y] [ofx ofy] w h]
   (draw-sprite
-   (->> (:textures @state) (:puyos))
+   (->> (:textures @resources) (:puyos))
    [18 17 1] [sx sy] [(+ ofx x) (+ ofy y) w h]))
 
 (def pt-to-grid {:pt/red [0 3]
                  :pt/green [0 7]
                  :pt/blue [0 11]
                  :pt/yellow [0 15]
-                 :pt/purple [0 19]})
-(defn create-puyo-animation-particle "grid pos is a list of [sx sy]" [grid-pos color loop? lifetime]
+                 :pt/purple [0 19]
+                 :pt/garbage [23 0]})
+(defn create-puyo-animation-particle2
+  "
+  (grid-pos-fn :pt/color -> (list [sx sy]))
+  lifetime is amount of ms after it should die
+  "
+  [grid-pos-fn color loop? lifetime]
   (let [[colorx colory] (color pt-to-grid)
+        grid-pos (grid-pos-fn color)
         grid-pos (map (fn [[x y t]] [(+ colorx x) (+ colory y) (if t t 255)]) grid-pos)]
     (pcl/create-particle
      (fn [pc [x y] [ofx ofy] w h] (let [current-frame (nth grid-pos (:frame pc))]
@@ -423,8 +430,6 @@
            2)
     queue))
 
-(println pt/constructable)
-
 (defn player_input-handle [p keys das board]
   (let [dt (fn [time] (- (getTime) time))
         justPressed (fn [time] (< (dt time) (+ 0 js/deltaTime)))
@@ -454,7 +459,8 @@
                  (reduce (fn [acc block2]
                            (let [[x y c] block2
                                  [x y] (+v [x y] (:pos block))]
-                             (assoc acc [x y] (particle-f c)))) acc (:blocks block)))
+                             (assoc acc [x y] (particle-f c))))
+                         acc (:blocks block)))
                {} blocks)))))
 
 (defn frame-extend "returns v v v v for (frame-extend v 4)" [& vecs]
@@ -470,13 +476,81 @@
    (filter #(not (= % nil)))
    (vec)))
 
+(def score_chain-power-table [-1 0 8 16 32 64 96 128 160 192 224 256 288
+                              320 352 384 416 448 480 512 544 576 608 640 672])
+(def score_color-bonus-table [-1 0 3 6 12 24])
+(def score_group-bonus-table [-1 -1 -1 -1 0 2 3 4 5 6 7 10])
+(defn score_get-in-table [table i]
+  (if (>= i (count table))
+    (last table)
+    (table i)))
+
+(defn score_calculate
+  "groups is vec of group sizes"
+  [puyos-cleared chain# color# group#]
+  (loop [total 0
+         pc puyos-cleared
+         chain# chain#
+         color# color#
+         group# group#]
+    (if (empty? pc)
+      total
+      (recur
+       (+ total (* 10 (first pc)
+                   (let [n (+ (score_get-in-table score_chain-power-table (first chain#))
+                              (score_get-in-table score_color-bonus-table (first color#))
+                              (score_get-in-table score_group-bonus-table (first group#)))]
+                     (cond
+                       (> n 999) 999
+                       (< n 1) 1
+                       :else n))))
+       (rest pc) (rest chain#) (rest color#) (rest group#)))))
+
+(defn score_chain-score-update
+  ([globalstate blocks]
+   (if (> (count blocks) 0)
+     (score_chain-score-update globalstate blocks true)
+     (->
+      (assoc globalstate :chain-score 0)
+      (dissoc :chain-colors)
+      (dissoc :chain-groups))))
+
+  ([globalstate blocks _]
+   (let [colors (reduce
+                 (fn [colors {[[_x _y c]] :blocks}]
+                   (conj colors c))
+                 #{}
+                 blocks)
+         new-state
+         (-> (update globalstate :chain-colors #(conj % [colors]))
+             (update :chain-groups #(concat % [(count blocks)])))]
+     (assoc new-state :chain-score
+            (score_calculate
+             (:chain-groups new-state)
+             (map inc (range (:chain new-state)))
+             (map count (:chain-colors new-state))
+             (:chain-groups new-state))))))
+
 (def hook-block-land
-  [(create-anim-hook #(create-puyo-animation-particle [[6 0] [7 0]] % true 200))])
+  [(create-anim-hook #(create-puyo-animation-particle2
+                       (fn [c]
+                         (if (not= c :pt/garbage)
+                           [[6 0] [7 0]]
+                           [[0 0]]))
+                       % true 200))])
 (def hook-block-pop
-  [(create-anim-hook #(create-puyo-animation-particle
-                       (frame-extend [0 0] [0 0 90] [0 0] [0 0 90] [0 0] [0 0 90] [4 0] 4 [7 -1] [8 -1]) % false 700))
+  [(create-anim-hook #(create-puyo-animation-particle2
+                       (fn [c]
+                         (if (not= c :pt/garbage)
+                           (frame-extend [0 0] [0 0 90] [0 0] [0 0 90] [0 0] [0 0 90] [4 0] 4 [7 -1] [8 -1])
+                           [[0 0]]))
+                       % false 700))
    (fn [globalstate blocks]
      (update globalstate :chain (if (> (count blocks) 0) inc identity)))
+   score_chain-score-update
+   (fn [globalstate blocks]
+     (print "chain score:" (:chain-score globalstate))
+     globalstate)
    (fn [globalstate blocks]
      (if blocks
        (let [[minx miny] (reduce
@@ -578,16 +652,16 @@
          {:process :s/pop :next-state (if popped? [:s/fall-fast currentTime 700] [:s/new-player currentTime 0])}]))))
 
 (defn preload []
-  (swap! state update :textures assoc :puyos (js/loadImage "original-puyos.png"))
-  (swap! state update :fonts assoc :roboto (js/loadFont "fonts/Roboto-Regular.ttf")))
+  (swap! resources update :textures assoc :puyos (js/loadImage "original-puyos.png"))
+  (swap! resources update :fonts assoc :roboto (js/loadFont "fonts/Roboto-Regular.ttf")))
 
 (defn setup []
   (let [canvas (js/createCanvas js/window.innerWidth js/window.innerHeight "webgl")
         ;; canvas (js/_renderer)
-        texture (.getTexture canvas (:puyos (:textures @state)))]
+        texture (.getTexture canvas (:puyos (:textures @resources)))]
     (.setInterpolation texture js/NEAREST js/NEAREST))
   ;; (js/noSmooth)
-  (js/textFont (:roboto (:fonts @state)))
+  (js/textFont (:roboto (:fonts @resources)))
   (js/pixelDensity 1)
   (js/noStroke))
 
@@ -677,8 +751,25 @@
   (println (str "releasing " js/key))
   (swap! state update :keys dissoc js/key))
 
+(defonce main-lock (atom 0))
+
+(defn main-update []
+  (let [iframe (js/document.getElementById "frame1")]
+    (.contentWindow.postMessage iframe "yay" js/window.location.origin)))
+
 (defn main []
-  (println "this is main" (keyword-map)))
+  (when (= @main-lock 0)
+    (swap! main-lock inc)
+    (a/go-loop []
+      (a/<! (a/timeout 1000))
+      (main-update)
+      (recur))))
+
+(when (:play (keyword-map))
+  (js/window.addEventListener
+   "message"
+   (fn [message]
+     (print "RECIEVED MESSAGE" message.data))))
 
 (if (:play (keyword-map))
   (doto js/window
