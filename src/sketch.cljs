@@ -755,17 +755,16 @@
 
 (defn main-update []
   (let [iframe (js/document.getElementById "frame1")]
-    (.contentWindow.postMessage iframe "yay" js/window.location.origin)))
+    (.contentWindow.postMessage iframe "bruh" js/window.location.origin)))
 
 (defn main []
   (when (= @main-lock 0)
-    (swap! main-lock inc)
     (a/go-loop []
       (a/<! (a/timeout 1000))
       (main-update)
       (recur))))
 
-(when (:play (keyword-map))
+(when (and (= @main-lock 0) (:play (keyword-map)))
   (js/window.addEventListener
    "message"
    (fn [message]
@@ -780,3 +779,5 @@
     (g/set "keyPressed" keyPressed))
   (main))
   ;; (g/set "keyReleased" keyReleased))
+
+(swap! main-lock inc)
