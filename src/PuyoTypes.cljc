@@ -1,5 +1,4 @@
-(ns PuyoTypes
-  (:require-macros [Macros :as m]))
+(ns PuyoTypes)
 
 (def enum [:pt/empty :pt/garbage :pt/red :pt/green :pt/blue :pt/yellow :pt/purple])
 (def constructable (-> (into #{} enum) (disj :pt/garbage) (disj :pt/empty) ((fn [x] (into [] x)))))
