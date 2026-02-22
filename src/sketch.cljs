@@ -32,7 +32,7 @@
   (f-end))
 
 (defonce state (atom
-                (p/create-globalstate #queue [])))
+                (p/create-globalstate)))
 (defonce resources
   (atom {:textures {}
          :fonts {}}))

@@ -3,7 +3,7 @@
    [Puyo :as p]))
 
 (def state
-  (p/create-globalstate clojure.lang.PersistentQueue/EMPTY))
+  (p/create-globalstate))
 
 (print state)
 (p/state-update state (:state-enum state) {} 0 0)
