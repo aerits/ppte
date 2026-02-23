@@ -1,7 +1,7 @@
 (ns Puyo
   (:require
    [PuyoTypes :as pt]
-   [queue :as q]))
+   [lib :as l]))
 
 (defn create-board [rows cols val]
   (vec (map (fn [_] (vec (repeat cols val))) (range rows))))
@@ -383,6 +383,8 @@
               popped? (> puyos-popped# 0)]
           [(-> (assoc globalstate :board new-board) (run-hook (:hook-block-pop hooks) popped))
            {:process :s/pop :next-state (if popped? [:s/fall-fast currentTime 700] [:s/new-player currentTime 0])}])))))
+;; (defn state-update2 [globalstate currentTime]
+;;   (if (:last-update globalstate)))
 
 (defn create-globalstate
   ([]
@@ -391,10 +393,10 @@
     :particles {}
     :state-enum {:process :s/pop}
     :chain 0
-    :piece-queue (q/create-queue)
+    :piece-queue (l/create-queue)
     :das 131 ;; ms
     :keys {}
-    :falling-blocks (garbage-puyo_create [] 10)})
+    :falling-blocks nil})
   ([das]
    (-> (create-globalstate)
        (assoc :das das))))

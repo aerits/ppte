@@ -31,8 +31,7 @@
   `(~@body)
   (f-end))
 
-(defonce state (atom
-                (p/create-globalstate)))
+(defonce state (atom (p/create-globalstate)))
 (defonce resources
   (atom {:textures {}
          :fonts {}}))
@@ -292,8 +291,7 @@
     (reset! state new-state)
     (swap! state assoc :state-enum new-state-enum))
 
-  ;; (swap! state update :piece-queue p/fill-piece-queue 2)
-
+  ;; update particles every dt
   (when (> (- (getTime) (:timer/updateTime @timer)) (:timer/dt @timer))
     (swap! timer assoc :timer/updateTime (getTime))
     (let [particles (:particles @state)
@@ -369,33 +367,10 @@
   (println (str "releasing " js/key))
   (swap! state update :keys dissoc js/key))
 
-(defonce main-lock (atom 0))
-
-(defn main-update []
-  (let [iframe (js/document.getElementById "frame1")]
-    (.contentWindow.postMessage iframe "bruh" js/window.location.origin)))
-
-(defn main []
-  (when (= @main-lock 0)
-    (a/go-loop []
-      (a/<! (a/timeout 1000))
-      (main-update)
-      (recur))))
-
-(when (and (= @main-lock 0) (:play (keyword-map)))
-  (js/window.addEventListener
-   "message"
-   (fn [message]
-     (print "RECIEVED MESSAGE" message.data))))
-
-(if (:play (keyword-map))
-  (doto js/window
-    (g/set "preload" preload)
-    (g/set "setup" setup)
-    (g/set "draw" draw)
-    (g/set "windowResized" windowResized)
-    (g/set "keyPressed" keyPressed))
-  (main))
+(doto js/window
+  (g/set "preload" preload)
+  (g/set "setup" setup)
+  (g/set "draw" draw)
+  (g/set "windowResized" windowResized)
+  (g/set "keyPressed" keyPressed))
   ;; (g/set "keyReleased" keyReleased))
-
-(swap! main-lock inc)

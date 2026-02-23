@@ -10,4 +10,7 @@
  :builds
  {:sketch {:target :browser
            :compiler-options {:optimizations :advanced}
-           :modules {:main {:entries [sketch]}}}}}
+           :modules {:sketch {:entries [sketch]}}}
+  :client {:target :browser
+           :compiler-options {:optimizations :advanced}
+           :modules {:client {:entries [client]}}}}}

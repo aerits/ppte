@@ -56,7 +56,7 @@
 
 (defroute game [request]
   (-> (ok "<!DOCTYPE html><head>
-<script src='js/main.js'></script>
+<script src='js/client.js'></script>
 </head><body>
 <iframe id='frame1' src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
 </body></html>")
