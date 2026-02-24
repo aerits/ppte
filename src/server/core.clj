@@ -10,7 +10,8 @@
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [nrepl.server :as nrepl])
+            [nrepl.server :as nrepl]
+            [version])
   (:gen-class))
 
 (def header-interceptor
@@ -47,7 +48,7 @@
 
 (macroexpand-1
  '(defroute index [request]
-    (-> (ok "hi ppte <br> <a href='game'>play</a>")
+    (-> (ok (format "hi ppte <br> <a href='game?%s'>play</a>" version/version))
         (html))))
 
 (defroute greet [request]
@@ -55,15 +56,15 @@
       (json)))
 
 (defroute game [request]
-  (-> (ok "<!DOCTYPE html><head>
-<script src='js/client.js'></script>
+  (-> (ok (format "<!DOCTYPE html><head>
+<script src='js/client.js?%s'></script>
 </head><body>
 <iframe id='frame1' src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
-</body></html>")
+</body></html>" version/version))
       (html)))
 
 (defroute index [request]
-  (-> (ok "hi <br> <a href='game'>play</a>")
+  (-> (ok (format "hi <br> <a href='game?%s'>play</a>" version/version))
       (html)))
 
 (defroute ws [request]

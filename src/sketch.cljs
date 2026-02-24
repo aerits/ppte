@@ -2,6 +2,7 @@
   (:require [goog.object :as g]
             [PuyoTypes :as pt]
             [Puyo :as p]
+            [version]
             [Particle :as pcl]
             [clojure.string :as str]
             [clojure.core.async :as a])
@@ -269,8 +270,8 @@
             :hook-block-pop hook-block-pop})
 
 (defn preload []
-  (swap! resources update :textures assoc :puyos (js/loadImage "original-puyos.png"))
-  (swap! resources update :fonts assoc :roboto (js/loadFont "fonts/Roboto-Regular.ttf")))
+  (swap! resources update :textures assoc :puyos (js/loadImage (str "original-puyos.png?" version/version)))
+  (swap! resources update :fonts assoc :roboto (js/loadFont (str "fonts/Roboto-Regular.ttf?" version/version))))
 
 (defn setup []
   (let [canvas (js/createCanvas js/window.innerWidth js/window.innerHeight "webgl")
