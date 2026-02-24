@@ -5,7 +5,7 @@
  :dev-http {3000 "public"}
 
  :dependencies
- []
+ [[reagent "2.0.1"]]
 
  :builds
  {:sketch {:target :browser

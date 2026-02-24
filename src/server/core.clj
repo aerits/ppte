@@ -56,11 +56,8 @@
       (json)))
 
 (defroute game [request]
-  (-> (ok (format "<!DOCTYPE html><head>
-<script src='js/client.js?%s'></script>
-</head><body>
-<iframe id='frame1' src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
-</body></html>" version/version))
+  (-> (ok (format "<!DOCTYPE html><head><script src='js/client.js?%s'></script></head><body><div id=\"app\"></div></body></html>" version/version))
+;; <iframe id='frame1' src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
       (html)))
 
 (defroute index [request]
