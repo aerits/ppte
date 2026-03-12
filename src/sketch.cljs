@@ -27,6 +27,8 @@
       (second)
       (request-to-keywords)))
 
+(print (keyword-map))
+
 (defmacro with [f-begin f-end & body]
   (f-begin)
   `(~@body)
@@ -328,6 +330,8 @@
   ;;       offy js/window.innerHeight
   ;;       offx (/ offx 3)
   ;;       offy (/ offy 5)]
+
+  (js/scale (* 0.0012 js/innerHeight))
   (let [offx -200
         offy -400]
     (draw-board (:board @state)
@@ -347,7 +351,7 @@
                  puyo-draw-handle
                  offx offy)
 
-    ;; cover up hidden rows
+;; cover up hidden rows
     (js/stroke "gray")
     (js/fill "gray")
     (js/rect (- offx 25) (- offy 25) 300 100)
@@ -365,12 +369,11 @@
     (draw-piece-queue (:piece-queue @state)
                       puyo-draw-handle
                       (+ offx 200) offy)
-    (when (= "true" (:play (keyword-map)))
-      (when-not (.hasFocus js/document)
-        (println "no-focus")
-        (js/fill "white")
-        (js/textSize 40)
-        (js/text "click to focus window" -200 0)))))
+    (when (and (= "true" (:play (keyword-map))) (not (.hasFocus js/document)))
+      (println "no-focus")
+      (js/fill "white")
+      (js/textSize 40)
+      (js/text "click to focus window" -200 0))))
 
 (defn windowResized []
   (js/resizeCanvas js/window.innerWidth js/window.innerHeight))
