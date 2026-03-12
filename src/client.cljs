@@ -1,28 +1,27 @@
 (ns client
-  (:require ["react" :as react]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
+            ["react" :as react]
             [reagent.core :as r]
+            [goog.string :as gstring]
+            [clojure.core.async :as a]
             [reagent.dom.client :as rdomc]))
 
+(defn make-game [[w h] play?]
+  [:iframe {:id "frame1"
+            :src (gstring/format "index.html?play=%s&server=0" (str play?))
+            :height (gstring/format "%ipx" w)
+            :width (gstring/format "%ipx" h)}])
+
 (defn app []
-  (->> (concat [:div
-                [:iframe {:id "frame1"
-                          :src "index.html?play=true&server=0"
-                          :height "700px"
-                          :width "600px"}]]
+  (into [:div
+         [make-game [700 600] true]]))
+        ; (for [i (range 27)] [make-game [700 600] false])))
 
-               (for [i (range 5)]
-                 [:iframe {:id "frame1"
-                           :src "index.html?play=true&server=0"
-                           :height "200px"
-                           :width "100px"}]))
-       (into [])))
+(defonce root (delay (rdomc/create-root (.getElementById js/document "root"))))
 
-(print (app))
+(defn main []
+  (rdomc/render @root [app]))
 
-(def functional-compiler (r/create-compiler {:function-components true}))
-
-(defonce react-root (delay (rdomc/create-root (.getElementById js/document "app"))))
-
-(defn ^:export ^:dev/after-load run []
-  (rdomc/render @react-root [app] functional-compiler))
+(a/go
+  (a/timeout 10)
+  (main))

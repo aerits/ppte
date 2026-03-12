@@ -85,6 +85,7 @@
    (let [transparency (-> (- (getTime) (:player/groundTime p)) (/ 1000) (- 1) (* -1) (* 255))
          transparency (if (:player/groundTime p) transparency 255)]
      (draw-player p handle x y transparency))))
+
 (defn draw-falling-blocks
   [blocks handle x y]
   (when blocks
@@ -97,12 +98,14 @@
     (doseq [[idx player] (map-indexed vector queue)]
       (draw-player player handle x (+ (* 130 idx) y)))))
 
+;; requires p5
 (defn draw-sprite
   ([texture [ix iy iw ih] [dx dy dw dh]]
    (js/image texture (- dx (/ dw 2)) (- dy (/ dh 2)) dw dh ix iy iw ih))
   ([texture [sw sh gap] [gridx gridy] [x y w h]]
    (draw-sprite texture [(-> gridx (* (+ gap sw))) (-> gridy (* (+ gap sh))) sw sh] [x y w h])))
 
+;; requires p5
 (defn draw-puyo [[sx sy] [x y] [ofx ofy] w h]
   (draw-sprite
    (->> (:textures @resources) (:puyos))
@@ -114,6 +117,8 @@
                  :pt/yellow [0 15]
                  :pt/purple [0 19]
                  :pt/garbage [23 0]})
+
+;; requires p5
 (defn create-puyo-animation-particle2
   "
   (grid-pos-fn :pt/color -> (list [sx sy]))
@@ -131,9 +136,10 @@
      (fn [pc] (update pc :frame (if loop? p/l+ p/s+) 1 (:max-frames pc)))
      {:frame 0 :max-frames (dec (count grid-pos)) :death (+ (getTime) lifetime)})))
 
+;; requires p5
 (defn create-text-particle "grid pos is a list of [sx sy]" [draw-text [posx posy] fn-p5-style lifetime]
   (pcl/create-particle
-   (fn [pc [x y] [ofx ofy] w h]
+   (fn [_pc [_x _y] [ofx ofy] w h]
      (fn-p5-style
       (fn [] (js/text draw-text (+ ofx (* posx w)) (+ ofy (* posy h))))))
    (fn [pc] pc)
@@ -161,6 +167,7 @@
         (check-colors "1111") [2 -1]
         :else (throw (js/Error. (str "Invalid state:" color-string)))))
 
+;; requires p5
 (defn puyo-drawer-generator [sx sy color variants-fn]
   (fn [x y ofx ofy [right left up down]]
     (let [color-string (str (=i color up) (=i color down) (=i color left) (=i color right))
@@ -168,6 +175,8 @@
           [sx-offset sy-offset] (variants-fn check-colors color-string)]
       ;; (println color-string)
       (draw-puyo [(+ sx-offset sx) (+ sy-offset sy)] [(* x 50) (* y 50)] [ofx ofy] 54 51))))
+
+;; requires p5
 (def puyo-draw-handle
   {:pt/empty (fn [x y ofx ofy] (js/fill "yellow") (js/circle (+ ofx (* x 50)) (+ ofy (* y 50)) 10))
    :pt/red (puyo-drawer-generator 0 3 :pt/red puyo-drawer-variants)
@@ -177,8 +186,7 @@
    :pt/purple (puyo-drawer-generator 0 19 :pt/purple puyo-drawer-variants)
    :pt/garbage (puyo-drawer-generator 23 0 :pt/garbage (fn [_ _] [0 0]))})
 
-;; (pt/assertHandlesAllTypes puyo-draw-handle)
-
+;; requires js
 (defn player_input-handle [p keys das board]
   (let [dt (fn [time] (- (getTime) time))
         justPressed (fn [time] (< (dt time) (+ 0 js/deltaTime)))
@@ -225,6 +233,7 @@
    (filter #(not (= % nil)))
    (vec)))
 
+;; requires p5
 (def hook-block-land
   [(create-anim-hook #(create-puyo-animation-particle2
                        (fn [c]
@@ -232,6 +241,8 @@
                            [[6 0] [7 0]]
                            [[0 0]]))
                        % true 200))])
+
+;; requires p5
 (def hook-block-pop
   [(create-anim-hook #(create-puyo-animation-particle2
                        (fn [c]
@@ -242,7 +253,7 @@
    (fn [globalstate blocks]
      (update globalstate :chain (if (> (count blocks) 0) inc identity)))
    p/score_chain-score-update
-   (fn [globalstate blocks]
+   (fn [globalstate _blocks]
      (print "chain score:" (:chain-score globalstate))
      globalstate)
    (fn [globalstate blocks]
@@ -266,6 +277,7 @@
          (assoc-in globalstate [:particles [-1 -1]] particle))
        globalstate))])
 
+;; requires p5
 (def hooks {:hook-block-land hook-block-land
             :hook-block-pop hook-block-pop})
 
@@ -273,6 +285,7 @@
   (swap! resources update :textures assoc :puyos (js/loadImage (str "original-puyos.png?" version/version)))
   (swap! resources update :fonts assoc :roboto (js/loadFont (str "fonts/Roboto-Regular.ttf?" version/version))))
 
+;; requires p5
 (defn setup []
   (let [canvas (js/createCanvas js/window.innerWidth js/window.innerHeight "webgl")
         ;; canvas (js/_renderer)
@@ -352,11 +365,12 @@
     (draw-piece-queue (:piece-queue @state)
                       puyo-draw-handle
                       (+ offx 200) offy)
-    (when-not (.hasFocus js/document)
-      (println "no-focus")
-      (js/fill "white")
-      (js/textSize 40)
-      (js/text "click to focus window" -200 0))))
+    (when (= "true" (:play (keyword-map)))
+      (when-not (.hasFocus js/document)
+        (println "no-focus")
+        (js/fill "white")
+        (js/textSize 40)
+        (js/text "click to focus window" -200 0)))))
 
 (defn windowResized []
   (js/resizeCanvas js/window.innerWidth js/window.innerHeight))
@@ -372,6 +386,8 @@
   (g/set "preload" preload)
   (g/set "setup" setup)
   (g/set "draw" draw)
-  (g/set "windowResized" windowResized)
-  (g/set "keyPressed" keyPressed))
+  (g/set "windowResized" windowResized))
+(when (= "true" (:play (keyword-map)))
+  (doto js/window
+    (g/set "keyPressed" keyPressed)))
   ;; (g/set "keyReleased" keyReleased))

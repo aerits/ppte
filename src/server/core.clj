@@ -56,12 +56,21 @@
       (json)))
 
 (defroute game [request]
-  (-> (ok (format "<!DOCTYPE html><head><script src='js/client.js?%s'></script></head><body><div id=\"app\"></div></body></html>" version/version))
+  (-> (ok
+       (format "
+<!DOCTYPE html>
+<head>
+  <script src='js/client.js?%s'></script>
+</head>
+<body>
+  <div id=\"root\"></div>
+</body>
+</html>" version/version))
 ;; <iframe id='frame1' src='/index.html?play=true&server=0' height='800px' width='600px'></iframe>
       (html)))
 
 (defroute index [request]
-  (-> (ok (format "hi <br> <a href='game?%s'>play</a>" version/version))
+  (-> (ok (format "hi puyo <br> <a href='game?%s'>play</a>" version/version))
       (html)))
 
 (defroute ws [request]
@@ -139,3 +148,7 @@
                                   (str/join)
                                   (keyword))
                               v]) args))))
+
+(comment
+  (start)
+  (restart))
